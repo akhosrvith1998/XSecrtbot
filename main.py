@@ -6,6 +6,7 @@ from flask import Flask, request
 import os
 from datetime import datetime
 import pytz
+import asyncio
 
 # تنظیمات اولیه
 TOKEN = '7682323067:AAFcmkRvUZBQZJVQgCKgPqkaQb0TE2TPBPo'
@@ -209,22 +210,27 @@ async def button(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
     conn = sqlite3.connect('whisper_bot.db')
     c = conn.cursor()
     whisper_id = int(data.split('_')[1])
-    c.execute('SELECT sender_id, receiver_id, receiver_username, receiver_last_name, text, view_count, view_time, snoop_count, deleted FROM whispers WHERE id = ?', (whisper_id,))
+    c.execute('SELECT id, sender_id, receiver_id, receiver_username, receiver_last_name, text, view_count, view_time, snoop_count, deleted FROM whispers WHERE id = ?', (whisper_id,))
     whisper = c.fetchone()
-    sender_id, receiver_id, receiver_username, receiver_last_name, text, view_count, view_time, snoop_count, deleted = whisper
+    if not whisper:
+        await query.answer("این نجوا دیگر وجود ندارد!", show_alert=True)
+        return
+
+    id, sender_id, receiver_id crabSnatcher, receiver_id, receiver_username, receiver_last_name, text, view_count, view_time, snoop_count, deleted = whisper
 
     if data.startswith('view_'):
-        if user_id == receiver_id:
+        if user_id == receiver_id or user_id == sender_id:
             tehran_tz = pytz.timezone('Asia/Tehran')
             view_time = datetime.now(tehran_tz).strftime('%H:%M')
-            c.execute('UPDATE whispers SET view_count = view_count + 1, view_time = ? WHERE id = ?', (view_time, whisper_id))
+            c.execute('UPDATE whispers SET view_count = view_count + 1,' WHERE id = ? WHERE receiver_id = ?', (view_time, whisper_id))
+            c.execute('UPDATE whispers SET view_time = ? WHERE id = ?', (view_time, whisper_id))
             conn.commit()
             await query.answer(text=f"{BOT_USERNAME}\n\nمتن نجوا:\n{text}", show_alert=True)
-        elif user_id != sender_id:
+        else:
             c.execute('UPDATE whispers SET snoop_count = snoop_count + 1 WHERE id = ?', (whisper_id,))
             conn.commit()
             await query.answer(text="تو گیرنده این نجوا نیستی! 😛", show_alert=True)
-        await update_inline_message(query, whisper_id)
+        await update_inline_message(update, whisper_id)
 
     elif data.startswith('reply_'):
         receiver_display = receiver_username if receiver_username else str(receiver_id)
@@ -243,28 +249,28 @@ async def button(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
 async def update_inline_message(query, whisper_id):
     conn = sqlite3.connect('whisper_bot.db')
     c = conn.cursor()
-    c.execute('SELECT receiver_last_name, view_count, view_time, snoop_count, deleted FROM whispers WHERE id = ?', (whisper_id,))
+    c.execute('SELECT receiver_username, receiver_last_name, view_count, view_time, snoop_count, deleted FROM whispers WHERE id = ?', (whisper_id,))
     whisper = c.fetchone()
-    receiver_last_name, view_count, view_time, snoop_count, deleted = whisper
+    receiver_username, receiver_last_name, view_count, view_time, snoop_count, deleted = whisper
 
     if deleted:
-        text = f"{receiver_last_name}\n\nاین نجوا توسط فرستنده، پاک شده 💤"
-        keyboard = [[InlineKeyboardButton("پاسخ 💭", callback_data=f"reply_{whisper_id}")]]
+        text = f"{receiver_last_name}\n\nاین نجوی توسط فرستنده پاک شده 💤"
+        keyboard = [[InlineKeyboardButton("پاسخ 💫", callback_data=f"reply_{whisper_id}")]]
     else:
         if view_count == 0:
-            text = f"{receiver_last_name}\n\nهنوز ندیده 😐\nتعداد فضول ها {snoop_count} نفر"
+            text = f"{receiver_last_name}\n\nهنوز ندیده 😐\nتعداد فضولا: {snoop_count} نفر"
             keyboard = [
                 [InlineKeyboardButton("ببینم 🤔", callback_data=f"view_{whisper_id}"),
-                 InlineKeyboardButton("پاسخ 💭", callback_data=f"reply_{whisper_id}")],
-                [InlineKeyboardButton("حذف 🤌🏼", callback_data=f"delete_{whisper_id}")]
+                 InlineKeyboardButton("پاسخ 💫", callback_data=f"reply_{whisper_id}")],
+                [InlineKeyboardButton("حذف 🤖", callback_data=f"delete_{whisper_id}")]
             ]
         else:
-            snoop_text = f"تعداد فضول ها {snoop_count} نفر" if snoop_count > 0 else "تعداد فضول ها"
+            snoop_text = f"تعداد فضولا: {snoop_count} نفر" if snoop_count > 0 else "تعداد فضولا"
             text = f"{receiver_last_name}\n\nنجوا رو {view_count} بار دیده 😈 {view_time}\n{snoop_text}"
             keyboard = [
                 [InlineKeyboardButton("ببینم 🤔", callback_data=f"view_{whisper_id}"),
-                 InlineKeyboardButton("پاسخ 💭", callback_data=f"reply_{whisper_id}")],
-                [InlineKeyboardButton("حذف 🤌🏼", callback_data=f"delete_{whisper_id}")]
+                 InlineKeyboardButton("پاسخ 💫", callback_data=f"reply_{whisper_id}")],
+                [InlineKeyboardButton("حذف 🤖", callback_data=f"delete_{whisper_id}")]
             ]
 
     await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard))
@@ -281,13 +287,19 @@ def home():
     return "XSecret Bot is running!"
 
 @app.route(f'/{TOKEN}', methods=['POST'])
-def webhook():
-    update = telegram.Update.de_json(request.get_json(force=True), application.bot)
-    application.process_update(update)
+async def webhook():
+    update = telegram.Update.de_json(await request.get_json(force=True), application.bot)
+    await application.process_update(update)
     return 'OK'
 
-if __name__ == '__main__':
-    # تنظیم Webhook
+# تابع ناهمگام برای تنظیم Webhook
+async def set_webhook():
+    await application.bot.set_webhook(f"https://XSecrtbot-secret-app.onrender.com/{TOKEN}")
+
+if __name__ == "__main__":
+    # اجرای تنظیم Webhook
+    asyncio.run(set_webhook())
+    
+    # تنظیمات Flask
     PORT = int(os.environ.get('PORT', 5000))
-    application.bot.set_webhook(f"https://XSecrtbot-render-app.onrender.com/7682323067:AAFcmkRvUZBQZJVQgCKgPqkaQb0TE2TPBPo")
     app.run(host='0.0.0.0', port=PORT)
