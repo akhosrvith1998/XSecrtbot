@@ -1,7 +1,7 @@
 import sqlite3
 import telegram
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InlineQueryResultArticle, InputTextMessageContent
-from telegram.ext import Updater, CommandHandler, MessageHandler, filters, InlineQueryHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, InlineQueryHandler, CallbackQueryHandler, ContextTypes
 from flask import Flask, request
 import os
 from datetime import datetime
@@ -13,9 +13,8 @@ BOT_USERNAME = '@XSecrtbot'
 SPONSOR_CHANNEL = '@XSecrtyou'
 app = Flask(__name__)
 
-# تنظیم Webhook برای Render
-updater = Updater(token=TOKEN, use_context=True)
-dispatcher = updater.dispatcher
+# تنظیم Application برای نسخه جدید python-telegram-bot
+application = ApplicationBuilder().token(TOKEN).build()
 
 # تنظیم پایگاه داده SQLite
 def init_db():
@@ -272,9 +271,9 @@ async def update_inline_message(query, whisper_id):
     conn.close()
 
 # تنظیم Handlerها
-dispatcher.add_handler(CommandHandler("start", start))
-dispatcher.add_handler(InlineQueryHandler(inlinequery))
-dispatcher.add_handler(CallbackQueryHandler(button))
+application.add_handler(CommandHandler("start", start))
+application.add_handler(InlineQueryHandler(inlinequery))
+application.add_handler(CallbackQueryHandler(button))
 
 # تنظیم Webhook برای Render
 @app.route('/')
@@ -283,12 +282,12 @@ def home():
 
 @app.route(f'/{TOKEN}', methods=['POST'])
 def webhook():
-    update = telegram.Update.de_json(request.get_json(force=True), updater.bot)
-    dispatcher.process_update(update)
+    update = telegram.Update.de_json(request.get_json(force=True), application.bot)
+    application.process_update(update)
     return 'OK'
 
 if __name__ == '__main__':
     # تنظیم Webhook
     PORT = int(os.environ.get('PORT', 5000))
-    updater.bot.set_webhook(f"https://your-render-app.onrender.com/{TOKEN}")
+    application.bot.set_webhook(f"https://your-render-app.onrender.com/{TOKEN}")
     app.run(host='0.0.0.0', port=PORT)
