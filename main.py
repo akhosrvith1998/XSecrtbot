@@ -289,5 +289,5 @@ def webhook():
 if __name__ == '__main__':
     # تنظیم Webhook
     PORT = int(os.environ.get('PORT', 5000))
-    application.bot.set_webhook(f"https://XSecrtbot-render-app.onrender.com/{TOKEN}")
+    application.bot.set_webhook(f"https://XSecrtbot-render-app.onrender.com/{7682323067:AAFcmkRvUZBQZJVQgCKgPqkaQb0TE2TPBPo}")
     app.run(host='0.0.0.0', port=PORT)
