@@ -30,7 +30,8 @@ def init_db():
         c.execute('''CREATE TABLE IF NOT EXISTS users (
                      user_id INTEGER PRIMARY KEY, 
                      username TEXT, 
-                     last_name TEXT)''')
+                     last_name TEXT,
+                     started INTEGER DEFAULT 0)''')  # ستون جدید started
         c.execute('''CREATE TABLE IF NOT EXISTS whispers (
                      id INTEGER PRIMARY KEY AUTOINCREMENT,
                      sender_id INTEGER,
@@ -64,6 +65,22 @@ async def check_membership(update: telegram.Update, context: ContextTypes.DEFAUL
         print(f"Membership check error: {e}")
         return False
 
+# بررسی وضعیت کاربر (استارت کرده یا نه)
+def check_user_started(user_id):
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('SELECT started FROM users WHERE user_id = ?', (user_id,))
+        result = c.fetchone()
+        return result and result[0] == 1
+    except Exception as e:
+        print(f"Check user started error: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
 # پیام خوشآمدگویی
 async def start(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
     print("Start command received")
@@ -73,10 +90,11 @@ async def start(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
         last_name = user.last_name or user.first_name
         username = user.username
 
-        # ذخیره کاربر در پایگاه داده
+        # ذخیره یا به‌روزرسانی کاربر در پایگاه داده
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        c.execute('INSERT OR REPLACE INTO users (user_id, username, last_name) VALUES (?, ?, ?)', (user_id, username, last_name))
+        c.execute('INSERT OR REPLACE INTO users (user_id, username, last_name, started) VALUES (?, ?, ?, ?)', 
+                  (user_id, username, last_name, 1))  # تنظیم started به 1
         conn.commit()
         conn.close()
 
@@ -103,13 +121,18 @@ async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYP
         user_id = update.inline_query.from_user.id
         last_name = update.inline_query.from_user.last_name or update.inline_query.from_user.first_name
 
-        # بررسی عضویت
+        # بررسی عضویت و وضعیت استارت
         is_member = await check_membership(update, context, user_id)
-        if not is_member:
+        has_started = check_user_started(user_id)
+
+        if not has_started or not is_member:
             results = [InlineQueryResultArticle(
                 id='1',
-                title="لطفا قبل از شروع روی این گزینه کلیک کن🤌🏼",
-                input_message_content=InputTextMessageContent(f"لطفا برای استفاده از ربات به پیوی من بیا و استارت کن!\nhttps://t.me/{BOT_USERNAME}?start=start")
+                title="لطفا قبل از شروع، روی این پیام کلیک کن 🤌🏼",
+                input_message_content=InputTextMessageContent(""),  # بدون پیام در گروه
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("شروع ربات", url="https://t.me/XSecrtbot?start=start")
+                ]])
             )]
             await update.inline_query.answer(results)
             return
