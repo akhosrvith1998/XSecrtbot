@@ -307,12 +307,12 @@ async def webhook():
 
 # تابع ناهمگام برای تنظیم Webhook
 async def set_webhook():
-    await application.bot.set_webhook(f"https://XSecrtbot-secret-app.onrender.com/{TOKEN}")
+    await application.bot.set_webhook(f"https://xsecrtbot.onrender.com/{TOKEN}")
 
 if __name__ == "__main__":
     # اجرای تنظیم Webhook
     asyncio.run(set_webhook())
-    
+
     # تنظیمات Flask
     PORT = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=PORT)
