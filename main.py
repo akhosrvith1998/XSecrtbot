@@ -1,8 +1,7 @@
 import sqlite3
 import telegram
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InlineQueryResultArticle, InputTextMessageContent
-from telegram.ext import Updater, CommandHandler, InlineQueryHandler, CallbackQueryHandler
-from telegram.ext import filters  # ایمپورت جدید برای فیلترها
+from telegram.ext import Updater, CommandHandler, MessageHandler, filters, InlineQueryHandler, CallbackQueryHandler, ContextTypes
 from flask import Flask, request
 import os
 from datetime import datetime
@@ -45,7 +44,7 @@ def init_db():
 init_db()
 
 # بررسی عضویت در کانال اسپانسر
-async def check_membership(update: telegram.Update, context, user_id):
+async def check_membership(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE, user_id):
     try:
         member = await context.bot.get_chat_member(chat_id=SPONSOR_CHANNEL, user_id=user_id)
         return member.status in ['member', 'administrator', 'creator']
@@ -53,7 +52,7 @@ async def check_membership(update: telegram.Update, context, user_id):
         return False
 
 # پیام خوشآمدگویی
-async def start(update: telegram.Update, context):
+async def start(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
     last_name = user.last_name or user.first_name
@@ -79,7 +78,7 @@ async def start(update: telegram.Update, context):
         await context.bot.send_message(chat_id=user_id, text="عضویتت هم تایید شد. ✅")
 
 # پردازش Inline Query
-async def inlinequery(update: telegram.Update, context):
+async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.inline_query.query.strip()
     user_id = update.inline_query.from_user.id
     last_name = update.inline_query.from_user.last_name or update.inline_query.from_user.first_name
@@ -121,6 +120,21 @@ async def inlinequery(update: telegram.Update, context):
     parts = query.split(' ', 1)
     receiver = parts[0] if len(parts) > 1 else None
     text = parts[1] if len(parts) > 1 else parts[0]
+
+    # فرمت سوم (ریپلای)
+    if update.inline_query.message and update.inline_query.message.reply_to_message:
+        receiver_id = update.inline_query.message.reply_to_message.from_user.id
+        receiver_last_name = update.inline_query.message.reply_to_message.from_user.last_name or update.inline_query.message.reply_to_message.from_user.first_name
+        receiver_username = update.inline_query.message.reply_to_message.from_user.username
+        receiver_display = receiver_username if receiver_username else str(receiver_id)
+        results = [InlineQueryResultArticle(
+            id='1',
+            title=f"{receiver_last_name} {receiver_display}",
+            input_message_content=InputTextMessageContent(f"{receiver_display} {text}", parse_mode='Markdown'),
+            reply_markup=build_keyboard(user_id, receiver_id, text, receiver_last_name, receiver_username)
+        )]
+        await update.inline_query.answer(results)
+        return
 
     # اگر فقط گیرنده تایپ شده
     if receiver and not text:
@@ -188,7 +202,7 @@ def build_keyboard(sender_id, receiver_id, text, receiver_last_name, receiver_us
     return InlineKeyboardMarkup(keyboard)
 
 # پردازش Callback Query
-async def button(update: telegram.Update, context):
+async def button(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
     data = query.data
@@ -269,12 +283,12 @@ def home():
 
 @app.route(f'/{TOKEN}', methods=['POST'])
 def webhook():
-    update = telegram.Update.de_json(request.get_json(), updater.bot)
+    update = telegram.Update.de_json(request.get_json(force=True), updater.bot)
     dispatcher.process_update(update)
     return 'OK'
 
 if __name__ == '__main__':
     # تنظیم Webhook
     PORT = int(os.environ.get('PORT', 5000))
-    updater.bot.set_webhook(f"https://XSecrtbot-render-app.onrender.com/{TOKEN}")
+    updater.bot.set_webhook(f"https://your-render-app.onrender.com/{TOKEN}")
     app.run(host='0.0.0.0', port=PORT)
