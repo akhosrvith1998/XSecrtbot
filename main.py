@@ -2,41 +2,35 @@ import sqlite3
 import telegram
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InlineQueryResultArticle, InputTextMessageContent
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, InlineQueryHandler, CallbackQueryHandler, ContextTypes
-from flask import Flask, request
 import os
 from datetime import datetime
 import pytz
 import asyncio
 import traceback
-import logging
-
-# تنظیم لاگ‌گذاری
-logging.basicConfig(
-    filename='/opt/render/project/src/bot.log',  # ذخیره لاگ‌ها تو فایل
-    level=logging.DEBUG,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 # لاگ نسخه پکیج
-logger.info(f"python-telegram-bot version: {telegram.__version__}")
+print(f"python-telegram-bot version: {telegram.__version__}")
 
 # تنظیمات اولیه
 TOKEN = '7682323067:AAFcmkRvUZBQZJVQgCKgPqkaQb0TE2TPBPo'
 BOT_USERNAME = '@XSecrtbot'
 SPONSOR_CHANNEL = '@XSecrtyou'
-app = Flask(__name__)
 
-# تنظیم Application برای نسخه جدید python-telegram-bot
+# تنظیم Application
 application = ApplicationBuilder().token(TOKEN).build()
 
-# تنظیم پایگاه داده SQLite
+# تنظیم پایگاه داده SQLite (استفاده از مسیر موقت)
+DB_PATH = '/tmp/whisper_bot.db'
+
 def init_db():
     try:
-        conn = sqlite3.connect('/opt/render/project/src/whisper_bot.db')
-        logger.info("Database connected successfully")
+        conn = sqlite3.connect(DB_PATH)
+        print("Database connected successfully")
         c = conn.cursor()
-        c.execute('''CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, username TEXT, last_name TEXT)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS users (
+                     user_id INTEGER PRIMARY KEY, 
+                     username TEXT, 
+                     last_name TEXT)''')
         c.execute('''CREATE TABLE IF NOT EXISTS whispers (
                      id INTEGER PRIMARY KEY AUTOINCREMENT,
                      sender_id INTEGER,
@@ -54,10 +48,10 @@ def init_db():
                      receiver_username TEXT,
                      receiver_last_name TEXT)''')
         conn.commit()
-        conn.close()
     except Exception as e:
-        logger.error(f"Database init error: {str(e)}")
-        logger.error(traceback.format_exc())
+        print(f"Database init error: {e}")
+    finally:
+        conn.close()
 
 init_db()
 
@@ -67,13 +61,12 @@ async def check_membership(update: telegram.Update, context: ContextTypes.DEFAUL
         member = await context.bot.get_chat_member(chat_id=SPONSOR_CHANNEL, user_id=user_id)
         return member.status in ['member', 'administrator', 'creator']
     except Exception as e:
-        logger.error(f"Membership check error: {str(e)}")
-        logger.error(traceback.format_exc())
+        print(f"Membership check error: {e}")
         return False
 
 # پیام خوشآمدگویی
 async def start(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info("Start command received")
+    print("Start command received")
     try:
         user = update.effective_user
         user_id = user.id
@@ -81,7 +74,7 @@ async def start(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
         username = user.username
 
         # ذخیره کاربر در پایگاه داده
-        conn = sqlite3.connect('/opt/render/project/src/whisper_bot.db')
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute('INSERT OR REPLACE INTO users (user_id, username, last_name) VALUES (?, ?, ?)', (user_id, username, last_name))
         conn.commit()
@@ -99,12 +92,12 @@ async def start(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
         if is_member:
             await context.bot.send_message(chat_id=user_id, text="عضویتت هم تایید شد. ✅")
     except Exception as e:
-        logger.error(f"Start handler error: {str(e)}")
-        logger.error(traceback.format_exc())
+        print(f"Start handler error: {e}")
+        traceback.print_exc()
 
 # پردازش Inline Query
 async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"Inline query received: {update.inline_query.query}")
+    print("Inline query received:", update.inline_query.query)
     try:
         query = update.inline_query.query.strip()
         user_id = update.inline_query.from_user.id
@@ -123,7 +116,7 @@ async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYP
 
         # اگر چیزی تایپ نشده یا فقط یوزرنیم ربات تایپ شده
         if not query or query == "":
-            conn = sqlite3.connect('/opt/render/project/src/whisper_bot.db')
+            conn = sqlite3.connect(DB_PATH)
             c = conn.cursor()
             c.execute('SELECT DISTINCT receiver_id, receiver_username, receiver_last_name FROM past_receivers WHERE sender_id = ?', (user_id,))
             past_receivers = c.fetchall()
@@ -172,7 +165,7 @@ async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYP
         # پردازش گیرنده
         receiver_id = None
         receiver_username = None
-        last_name = None
+        receiver_last_name = None
         if receiver.startswith('@'):
             receiver_username = receiver[1:]
             try:
@@ -180,7 +173,7 @@ async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYP
                 receiver_id = chat.id
                 receiver_last_name = chat.last_name or chat.first_name
             except Exception as e:
-                logger.error(f"Error getting chat by username: {str(e)}")
+                print(f"Error getting chat by username: {e}")
                 receiver_last_name = "کاربر ناشناس"
         elif receiver.isdigit():
             receiver_id = int(receiver)
@@ -189,7 +182,7 @@ async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYP
                 receiver_last_name = chat.last_name or chat.first_name
                 receiver_username = chat.username
             except Exception as e:
-                logger.error(f"Error getting chat by ID: {str(e)}")
+                print(f"Error getting chat by ID: {e}")
                 receiver_last_name = "کاربر ناشناس"
         else:
             results = [InlineQueryResultArticle(id='1', title='یوزرنیم یا آیدی عددی رو وارد کن 💡', input_message_content=InputTextMessageContent(''))]
@@ -197,7 +190,7 @@ async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYP
             return
 
         # ذخیره گیرنده در تاریخچه
-        conn = sqlite3.connect('/opt/render/project/src/whisper_bot.db')
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute('INSERT OR REPLACE INTO past_receivers (sender_id, receiver_id, receiver_username, receiver_last_name) VALUES (?, ?, ?, ?)',
                   (user_id, receiver_id, receiver_username, receiver_last_name))
@@ -213,19 +206,19 @@ async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYP
         )]
         await update.inline_query.answer(results)
     except Exception as e:
-        logger.error(f"Inline query error: {str(e)}")
-        logger.error(traceback.format_exc())
+        print(f"Inline query error: {e}")
+        traceback.print_exc()
 
 # ساخت دکمه‌های Inline Keyboard
 def build_keyboard(sender_id, receiver_id, text, receiver_last_name, receiver_username):
+    conn = None
     try:
-        conn = sqlite3.connect('/opt/render/project/src/whisper_bot.db')
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute('INSERT INTO whispers (sender_id, receiver_id, receiver_username, receiver_last_name, text) VALUES (?, ?, ?, ?, ?)',
                   (sender_id, receiver_id, receiver_username, receiver_last_name, text))
         whisper_id = c.lastrowid
         conn.commit()
-        conn.close()
 
         keyboard = [
             [InlineKeyboardButton("ببینم 🤔", callback_data=f"view_{whisper_id}"),
@@ -234,19 +227,23 @@ def build_keyboard(sender_id, receiver_id, text, receiver_last_name, receiver_us
         ]
         return InlineKeyboardMarkup(keyboard)
     except Exception as e:
-        logger.error(f"Build keyboard error: {str(e)}")
-        logger.error(traceback.format_exc())
+        print(f"Build keyboard error: {e}")
+        traceback.print_exc()
         return None
+    finally:
+        if conn:
+            conn.close()
 
 # پردازش Callback Query
 async def button(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"Button callback received: {update.callback_query.data}")
+    print("Button callback received:", update.callback_query.data)
+    conn = None
     try:
         query = update.callback_query
         user_id = query.from_user.id
         data = query.data
 
-        conn = sqlite3.connect('/opt/render/project/src/whisper_bot.db')
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         whisper_id = int(data.split('_')[1])
         c.execute('SELECT id, sender_id, receiver_id, receiver_username, receiver_last_name, text, view_count, view_time, snoop_count, deleted FROM whispers WHERE id = ?', (whisper_id,))
@@ -281,22 +278,24 @@ async def button(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
             await update_inline_message(query, whisper_id)
             await query.answer()
 
-        conn.close()
     except Exception as e:
-        logger.error(f"Button handler error: {str(e)}")
-        logger.error(traceback.format_exc())
+        print(f"Button handler error: {e}")
+        traceback.print_exc()
+    finally:
+        if conn:
+            conn.close()
 
 # به‌روزرسانی Inline Message
 async def update_inline_message(query, whisper_id):
+    conn = None
     try:
-        conn = sqlite3.connect('/opt/render/project/src/whisper_bot.db')
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
 
         # گرفتن اطلاعات نجوا
         c.execute('SELECT receiver_username, receiver_last_name, view_count, view_time, snoop_count, deleted FROM whispers WHERE id = ?', (whisper_id,))
         whisper = c.fetchone()
         if not whisper:
-            conn.close()
             return
 
         receiver_username, receiver_last_name, view_count, view_time, snoop_count, deleted = whisper
@@ -308,7 +307,6 @@ async def update_inline_message(query, whisper_id):
         c.execute('SELECT receiver_id FROM whispers WHERE id = ?', (whisper_id,))
         result = c.fetchone()
         if not result:
-            conn.close()
             return
         receiver_id = result[0]
 
@@ -317,8 +315,6 @@ async def update_inline_message(query, whisper_id):
             new_view_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             c.execute('UPDATE whispers SET view_count = view_count + 1, view_time = ? WHERE id = ? AND receiver_id = ?', (new_view_time, whisper_id, receiver_id))
             conn.commit()
-
-        conn.close()
 
         if deleted:
             text = f"{receiver_last_name}\n\nاین نجوی توسط فرستنده پاک شده 💤"
@@ -342,53 +338,18 @@ async def update_inline_message(query, whisper_id):
 
         await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard))
     except Exception as e:
-        logger.error(f"Update inline message error: {str(e)}")
-        logger.error(traceback.format_exc())
+        print(f"Update inline message error: {e}")
+        traceback.print_exc()
     finally:
-        try:
+        if conn:
             conn.close()
-        except:
-            pass
 
 # تنظیم Handlerها
 application.add_handler(CommandHandler("start", start))
 application.add_handler(InlineQueryHandler(inlinequery))
 application.add_handler(CallbackQueryHandler(button))
 
-# تنظیم Webhook برای Render
-@app.route('/')
-def home():
-    return "XSecret Bot is running!"
-
-@app.route(f'/{TOKEN}', methods=['POST'])
-async def webhook():
-    try:
-        json_data = await request.get_json(force=True)
-        logger.info(f"Received JSON: {json_data}")
-        update = telegram.Update.de_json(json_data, application.bot)
-        logger.info(f"Parsed update: {update}")
-        await application.process_update(update)
-        logger.info("Update processed successfully")
-        return 'OK'
-    except Exception as e:
-        logger.error(f"Webhook error: {str(e)}")
-        logger.error(traceback.format_exc())
-        return 'Error', 500
-
-# تابع ناهمگام برای تنظیم Webhook
-async def set_webhook():
-    try:
-        logger.info("Setting webhook...")
-        await application.bot.set_webhook(f"https://xsecrtbot.onrender.com/{TOKEN}")
-        logger.info("Webhook set successfully")
-    except Exception as e:
-        logger.error(f"Webhook setup error: {str(e)}")
-        logger.error(traceback.format_exc())
-
+# اجرای ربات
 if __name__ == "__main__":
-    # اجرای تنظیم Webhook
-    asyncio.run(set_webhook())
-    
-    # تنظیمات Flask
-    PORT = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=PORT)
+    print("Starting bot...")
+    application.run_polling()
