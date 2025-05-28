@@ -8,9 +8,18 @@ from datetime import datetime
 import pytz
 import asyncio
 import traceback
+import logging
+
+# تنظیم لاگ‌گذاری
+logging.basicConfig(
+    filename='/opt/render/project/src/bot.log',  # ذخیره لاگ‌ها تو فایل
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # لاگ نسخه پکیج
-print(f"python-telegram-bot version: {telegram.__version__}")
+logger.info(f"python-telegram-bot version: {telegram.__version__}")
 
 # تنظیمات اولیه
 TOKEN = '7682323067:AAFcmkRvUZBQZJVQgCKgPqkaQb0TE2TPBPo'
@@ -25,7 +34,7 @@ application = ApplicationBuilder().token(TOKEN).build()
 def init_db():
     try:
         conn = sqlite3.connect('/opt/render/project/src/whisper_bot.db')
-        print("Database connected successfully")  # لاگ برای دیباگ
+        logger.info("Database connected successfully")
         c = conn.cursor()
         c.execute('''CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, username TEXT, last_name TEXT)''')
         c.execute('''CREATE TABLE IF NOT EXISTS whispers (
@@ -47,7 +56,8 @@ def init_db():
         conn.commit()
         conn.close()
     except Exception as e:
-        print(f"Database init error: {e}")
+        logger.error(f"Database init error: {str(e)}")
+        logger.error(traceback.format_exc())
 
 init_db()
 
@@ -57,12 +67,13 @@ async def check_membership(update: telegram.Update, context: ContextTypes.DEFAUL
         member = await context.bot.get_chat_member(chat_id=SPONSOR_CHANNEL, user_id=user_id)
         return member.status in ['member', 'administrator', 'creator']
     except Exception as e:
-        print(f"Membership check error: {e}")
+        logger.error(f"Membership check error: {str(e)}")
+        logger.error(traceback.format_exc())
         return False
 
 # پیام خوشآمدگویی
 async def start(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
-    print("Start command received")  # لاگ برای دیباگ
+    logger.info("Start command received")
     try:
         user = update.effective_user
         user_id = user.id
@@ -88,13 +99,12 @@ async def start(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
         if is_member:
             await context.bot.send_message(chat_id=user_id, text="عضویتت هم تایید شد. ✅")
     except Exception as e:
-        print(f"Start handler error: {e}")
-        import traceback
-        print(traceback.format_exc())
+        logger.error(f"Start handler error: {str(e)}")
+        logger.error(traceback.format_exc())
 
 # پردازش Inline Query
 async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
-    print("Inline query received:", update.inline_query.query)  # لاگ برای دیباگ
+    logger.info(f"Inline query received: {update.inline_query.query}")
     try:
         query = update.inline_query.query.strip()
         user_id = update.inline_query.from_user.id
@@ -162,7 +172,7 @@ async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYP
         # پردازش گیرنده
         receiver_id = None
         receiver_username = None
-        receiver_last_name = None
+        last_name = None
         if receiver.startswith('@'):
             receiver_username = receiver[1:]
             try:
@@ -170,7 +180,7 @@ async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYP
                 receiver_id = chat.id
                 receiver_last_name = chat.last_name or chat.first_name
             except Exception as e:
-                print(f"Error getting chat by username: {e}")
+                logger.error(f"Error getting chat by username: {str(e)}")
                 receiver_last_name = "کاربر ناشناس"
         elif receiver.isdigit():
             receiver_id = int(receiver)
@@ -179,7 +189,7 @@ async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYP
                 receiver_last_name = chat.last_name or chat.first_name
                 receiver_username = chat.username
             except Exception as e:
-                print(f"Error getting chat by ID: {e}")
+                logger.error(f"Error getting chat by ID: {str(e)}")
                 receiver_last_name = "کاربر ناشناس"
         else:
             results = [InlineQueryResultArticle(id='1', title='یوزرنیم یا آیدی عددی رو وارد کن 💡', input_message_content=InputTextMessageContent(''))]
@@ -203,9 +213,8 @@ async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYP
         )]
         await update.inline_query.answer(results)
     except Exception as e:
-        print(f"Inline query error: {e}")
-        import traceback
-        print(traceback.format_exc())
+        logger.error(f"Inline query error: {str(e)}")
+        logger.error(traceback.format_exc())
 
 # ساخت دکمه‌های Inline Keyboard
 def build_keyboard(sender_id, receiver_id, text, receiver_last_name, receiver_username):
@@ -225,14 +234,13 @@ def build_keyboard(sender_id, receiver_id, text, receiver_last_name, receiver_us
         ]
         return InlineKeyboardMarkup(keyboard)
     except Exception as e:
-        print(f"Build keyboard error: {e}")
-        import traceback
-        print(traceback.format_exc())
+        logger.error(f"Build keyboard error: {str(e)}")
+        logger.error(traceback.format_exc())
         return None
 
 # پردازش Callback Query
 async def button(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
-    print("Button callback received:", update.callback_query.data)
+    logger.info(f"Button callback received: {update.callback_query.data}")
     try:
         query = update.callback_query
         user_id = query.from_user.id
@@ -275,9 +283,8 @@ async def button(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
 
         conn.close()
     except Exception as e:
-        print(f"Button handler error: {e}")
-        import traceback
-        print(traceback.format_exc())
+        logger.error(f"Button handler error: {str(e)}")
+        logger.error(traceback.format_exc())
 
 # به‌روزرسانی Inline Message
 async def update_inline_message(query, whisper_id):
@@ -335,9 +342,8 @@ async def update_inline_message(query, whisper_id):
 
         await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard))
     except Exception as e:
-        print(f"Update inline message error: {e}")
-        import traceback
-        print(traceback.format_exc())
+        logger.error(f"Update inline message error: {str(e)}")
+        logger.error(traceback.format_exc())
     finally:
         try:
             conn.close()
@@ -358,26 +364,26 @@ def home():
 async def webhook():
     try:
         json_data = await request.get_json(force=True)
-        print("Received JSON:", json_data)  # لاگ درخواست خام
+        logger.info(f"Received JSON: {json_data}")
         update = telegram.Update.de_json(json_data, application.bot)
-        print("Parsed update:", update)  # لاگ آپدیت
+        logger.info(f"Parsed update: {update}")
         await application.process_update(update)
-        print("Update processed successfully")  # لاگ موفقیت
+        logger.info("Update processed successfully")
         return 'OK'
     except Exception as e:
-        print(f"Webhook error: {str(e)}")
-        import traceback
-        print(traceback.format_exc())
+        logger.error(f"Webhook error: {str(e)}")
+        logger.error(traceback.format_exc())
         return 'Error', 500
 
 # تابع ناهمگام برای تنظیم Webhook
 async def set_webhook():
     try:
-        print("Setting webhook...")
+        logger.info("Setting webhook...")
         await application.bot.set_webhook(f"https://xsecrtbot.onrender.com/{TOKEN}")
-        print("Webhook set successfully")
+        logger.info("Webhook set successfully")
     except Exception as e:
-        print(f"Webhook setup error: {e}")
+        logger.error(f"Webhook setup error: {str(e)}")
+        logger.error(traceback.format_exc())
 
 if __name__ == "__main__":
     # اجرای تنظیم Webhook
