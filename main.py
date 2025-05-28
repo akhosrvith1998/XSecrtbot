@@ -249,9 +249,34 @@ async def button(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
 async def update_inline_message(query, whisper_id):
     conn = sqlite3.connect('whisper_bot.db')
     c = conn.cursor()
+
+    # گرفتن اطلاعات نجوا
     c.execute('SELECT receiver_username, receiver_last_name, view_count, view_time, snoop_count, deleted FROM whispers WHERE id = ?', (whisper_id,))
     whisper = c.fetchone()
+    if not whisper:
+        conn.close()
+        return  # یا یه پیام خطا ارسال کن
+
     receiver_username, receiver_last_name, view_count, view_time, snoop_count, deleted = whisper
+
+    # گرفتن اطلاعات کاربر فعلی
+    current_user_id = query.from_user.id
+
+    # بررسی اینکه این کاربر، دریافت‌کننده است
+    c.execute('SELECT receiver_id FROM whispers WHERE id = ?', (whisper_id,))
+    result = c.fetchone()
+    if not result:
+        conn.close()
+        return
+    receiver_id = result[0]
+
+    if current_user_id == receiver_id:
+        # به‌روزرسانی view_count و view_time فقط اگر خود مخاطب بود
+        new_view_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        c.execute('UPDATE whispers SET view_count = view_count + 1, view_time = ? WHERE id = ? AND receiver_id = ?', (new_view_time, whisper_id, receiver_id))
+        conn.commit()
+
+    conn.close()
 
     if deleted:
         text = f"{receiver_last_name}\n\nاین نجوی توسط فرستنده پاک شده 💤"
