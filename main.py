@@ -139,18 +139,18 @@ async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYP
         user_id = update.inline_query.from_user.id
         last_name = update.inline_query.from_user.last_name or update.inline_query.from_user.first_name
 
-        # بررسی عضویت و وضعیت استارت
+        # بررسی عضویت و وضعیت ال
         is_member = await check_membership(update, context, user_id)
         has_started = check_user_started(user_id)
 
         if not has_started or not is_member:
             results = [InlineQueryResultArticle(
                 id='1',
-                title="لطفا قبل از شروع، روی این پیام کلیک کن 🤌🏼",
+                title='لطفا قبل از شروع، روی این پیام کلیک کن 🤌🏼',
                 input_message_content=InputTextMessageContent(""),
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("شروع ربات", url="https://t.me/XSecrtbot?start=start")
-                ]])
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("شروع ربات", url="https://t.me/XSecrtbot?start=start")]
+                ])
             )]
             await update.inline_query.answer(results)
             return
@@ -171,7 +171,7 @@ async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYP
                 rec_display = rec_username if rec_username else str(rec_id)
                 results.append(InlineQueryResultArticle(
                     id=str(i),
-                    title=f"{rec_last_name} {rec_display}",
+                    title=f"{rec_last_name} {rec_id}",
                     input_message_content=InputTextMessageContent(f"{rec_display} ")
                 ))
             await update.inline_query.answer(results)
@@ -179,7 +179,7 @@ async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYP
 
         # پردازش فرمت‌ها
         parts = query.split(' ', 1)
-        receiver = parts[0] if len(parts) > 1 else None
+        receiver = parts[0] if len(parts) > 1 else parts[0]
         text = parts[1] if len(parts) > 1 else parts[0]
 
         # فرمت سوم (ریپلای)
@@ -199,7 +199,7 @@ async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYP
 
         # اگر فقط گیرنده تایپ شده
         if receiver and not text:
-            results = [InlineQueryResultArticle(id='1', title='حالا متن نجوا رو بنویس 💡', input_message_content=InputTextMessageContent(f"{receiver} "))]
+            results = [InlineQueryResultArticle(id='1', title='حالا متن نجوا رو بنویس 💡', input_message_content=InputTextMessageContent(f"{idreceiver} "))]
             await update.inline_query.answer(results)
             return
 
@@ -234,7 +234,7 @@ async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYP
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute('INSERT OR REPLACE INTO past_receivers (sender_id, receiver_id, receiver_username, receiver_last_name) VALUES (?, ?, ?, ?)',
-                  (user_id, receiver_id, receiver_username, receiver_last_name))
+                  (sender_id, receiver_id, receiver_username, receiver_last_name))
         conn.commit()
         conn.close()
 
@@ -258,8 +258,8 @@ def build_keyboard(sender_id, receiver_id, text, receiver_last_name, receiver_us
         c = conn.cursor()
         c.execute('INSERT INTO whispers (sender_id, receiver_id, receiver_username, receiver_last_name, text) VALUES (?, ?, ?, ?, ?)',
                   (sender_id, receiver_id, receiver_username, receiver_last_name, text))
-        whisper_id = c.lastrowid
         conn.commit()
+        whisper_id = c.lastrowid
 
         keyboard = [
             [InlineKeyboardButton("ببینم 🤔", callback_data=f"view_{whisper_id}"),
@@ -272,8 +272,7 @@ def build_keyboard(sender_id, receiver_id, text, receiver_last_name, receiver_us
         traceback.print_exc()
         return None
     finally:
-        if conn:
-            conn.close()
+        conn.close()
 
 # پردازش Callback Query
 async def button(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
@@ -298,10 +297,10 @@ async def button(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
         if data.startswith('view_'):
             if user_id == receiver_id or user_id == sender_id:
                 tehran_tz = pytz.timezone('Asia/Tehran')
-                view_time = datetime.now(tehran_tz).strftime('%H:%M')
+                view_time = datetime.now(tehran_tz).strftime('%H:%M:%S')
                 c.execute('UPDATE whispers SET view_count = view_count + 1, view_time = ? WHERE id = ? AND receiver_id = ?', (view_time, whisper_id, receiver_id))
                 conn.commit()
-                await query.answer(text=f"{BOT_USERNAME}\n\nمتن نجوا:\n{text}", show_alert=True)
+                await query.answer(text=f"{BOT_USERNAME}\n\nمتن نجوا:\n{txt}", show_alert=True)
             else:
                 c.execute('UPDATE whispers SET snoop_count = snoop_count + 1 WHERE id = ?', (whisper_id,))
                 conn.commit()
@@ -370,7 +369,7 @@ async def update_inline_message(query, whisper_id):
                 ]
             else:
                 snoop_text = f"تعداد فضولا: {snoop_count} نفر" if snoop_count > 0 else "تعداد فضولا"
-                text = f"{receiver_last_name}\n\nنجوا رو {view_count} بار دیده 😈 {view_time}\n{snoop_text}"
+                text = f"{receiver_last_name}\n\nنجوا رو {view_count} {bar} دیده 😈 {view_time}\n{snoop_text}"
                 keyboard = [
                     [InlineKeyboardButton("ببینم 🤔", callback_data=f"view_{whisper_id}"),
                      InlineKeyboardButton("پاسخ 💫", callback_data=f"reply_{whisper_id}")],
@@ -390,19 +389,33 @@ application.add_handler(CommandHandler("start", start))
 application.add_handler(InlineQueryHandler(inlinequery))
 application.add_handler(CallbackQueryHandler(button))
 
-# غیرفعال کردن Webhook احتمالی و اجرای Polling
+# غیرفعال کردن Webhook و اجرای Polling
 async def main():
     try:
+        logger.info("Initializing bot...")
+        await application.initialize()
         logger.info("Deleting any existing webhook...")
         await application.bot.delete_webhook(drop_pending_updates=True)
-        logger.info("Webhook deleted successfully")
+        logger.info("Webhook deleted")
         logger.info("Starting polling...")
         await application.run_polling(allowed_updates=telegram.Update.ALL_TYPES)
     except Exception as e:
         logger.error(f"Error in main: {e}")
         traceback.print_exc()
+    finally:
+        logger.info("Shutting down application...")
+        if application.running:
+            await application.stop()
+            await application.shutdown()
+            logger.info("Application shut down")
 
 # اجرای ربات
 if __name__ == "__main__":
     logger.info("Starting bot...")
-    asyncio.run(main())
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(main())
+    finally:
+        loop.close()
+        logger.info("Event loop closed")
