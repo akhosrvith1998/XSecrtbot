@@ -391,16 +391,18 @@ application.add_handler(InlineQueryHandler(inlinequery))
 application.add_handler(CallbackQueryHandler(button))
 
 # غیرفعال کردن Webhook احتمالی و اجرای Polling
-async def init_polling():
+async def main():
     try:
         logger.info("Deleting any existing webhook...")
         await application.bot.delete_webhook(drop_pending_updates=True)
         logger.info("Webhook deleted successfully")
+        logger.info("Starting polling...")
+        await application.run_polling(allowed_updates=telegram.Update.ALL_TYPES)
     except Exception as e:
-        logger.error(f"Error deleting webhook: {e}")
+        logger.error(f"Error in main: {e}")
+        traceback.print_exc()
 
 # اجرای ربات
 if __name__ == "__main__":
-    logger.info("Starting bot with polling...")
-    asyncio.run(init_polling())
-    application.run_polling(allowed_updates=telegram.Update.ALL_TYPES)
+    logger.info("Starting bot...")
+    asyncio.run(main())
