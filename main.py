@@ -1,7 +1,7 @@
 import sqlite3
 import telegram
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InlineQueryResultArticle, InputTextMessageContent
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, InlineQueryHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, InlineQueryHandler, CallbackQueryHandler, ContextTypes
 import os
 from datetime import datetime
 import pytz
@@ -139,7 +139,7 @@ async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYP
         user_id = update.inline_query.from_user.id
         last_name = update.inline_query.from_user.last_name or update.inline_query.from_user.first_name
 
-        # بررسی عضویت و وضعیت ال
+        # بررسی عضویت و وضعیت استارت
         is_member = await check_membership(update, context, user_id)
         has_started = check_user_started(user_id)
 
@@ -156,7 +156,7 @@ async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYP
             return
 
         # اگر چیزی تایپ نشده یا فقط یوزرنیم ربات تایپ شده
-        if not query or query == "":
+        if not query:
             conn = sqlite3.connect(DB_PATH)
             c = conn.cursor()
             c.execute('SELECT DISTINCT receiver_id, receiver_username, receiver_last_name FROM past_receivers WHERE sender_id = ?', (user_id,))
@@ -165,13 +165,13 @@ async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYP
 
             results = [
                 InlineQueryResultArticle(id='1', title='یوزرنیم یا آیدی عددی رو وارد کن 💡', input_message_content=InputTextMessageContent('')),
-                InlineQueryResultArticle(id='2', title='روی پیام کاربر ریپلای کن💡', input_message_content=InputTextMessageContent(''))
+                InlineQueryResultArticle(id='2', title='روی پیام کاربر ریپلای کن 💡', input_message_content=InputTextMessageContent(''))
             ]
             for i, (rec_id, rec_username, rec_last_name) in enumerate(past_receivers[:8], 3):
                 rec_display = rec_username if rec_username else str(rec_id)
                 results.append(InlineQueryResultArticle(
                     id=str(i),
-                    title=f"{rec_last_name} {rec_id}",
+                    title=f"{rec_last_name} ({rec_display})",
                     input_message_content=InputTextMessageContent(f"{rec_display} ")
                 ))
             await update.inline_query.answer(results)
@@ -179,8 +179,8 @@ async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYP
 
         # پردازش فرمت‌ها
         parts = query.split(' ', 1)
-        receiver = parts[0] if len(parts) > 1 else parts[0]
-        text = parts[1] if len(parts) > 1 else parts[0]
+        receiver = parts[0]
+        text = parts[1] if len(parts) > 1 else ''
 
         # فرمت سوم (ریپلای)
         if update.inline_query.message and update.inline_query.message.reply_to_message:
@@ -190,7 +190,7 @@ async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYP
             receiver_display = receiver_username if receiver_username else str(receiver_id)
             results = [InlineQueryResultArticle(
                 id='1',
-                title=f"{receiver_last_name} {receiver_display}",
+                title=f"{receiver_last_name} ({receiver_display})",
                 input_message_content=InputTextMessageContent(f"{receiver_display} {text}", parse_mode='Markdown'),
                 reply_markup=build_keyboard(user_id, receiver_id, text, receiver_last_name, receiver_username)
             )]
@@ -199,7 +199,11 @@ async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYP
 
         # اگر فقط گیرنده تایپ شده
         if receiver and not text:
-            results = [InlineQueryResultArticle(id='1', title='حالا متن نجوا رو بنویس 💡', input_message_content=InputTextMessageContent(f"{idreceiver} "))]
+            results = [InlineQueryResultArticle(
+                id='1',
+                title='حالا متن نجوا رو بنویس 💡',
+                input_message_content=InputTextMessageContent(f"{receiver} ")
+            )]
             await update.inline_query.answer(results)
             return
 
@@ -226,22 +230,27 @@ async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYP
                 logger.error(f"Error getting chat by ID: {e}")
                 receiver_last_name = "کاربر ناشناس"
         else:
-            results = [InlineQueryResultArticle(id='1', title='یوزرنیم یا آیدی عددی رو وارد کن 💡', input_message_content=InputTextMessageContent(''))]
+            results = [InlineQueryResultArticle(
+                id='1',
+                title='یوزرنیم یا آیدی عددی رو وارد کن 💡',
+                input_message_content=InputTextMessageContent('')
+            )]
             await update.inline_query.answer(results)
             return
 
         # ذخیره گیرنده در تاریخچه
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute('INSERT OR REPLACE INTO past_receivers (sender_id, receiver_id, receiver_username, receiver_last_name) VALUES (?, ?, ?, ?)',
-                  (sender_id, receiver_id, receiver_username, receiver_last_name))
-        conn.commit()
-        conn.close()
+        if receiver_id:
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            c.execute('INSERT OR REPLACE INTO past_receivers (sender_id, receiver_id, receiver_username, receiver_last_name) VALUES (?, ?, ?, ?)',
+                      (user_id, receiver_id, receiver_username, receiver_last_name))
+            conn.commit()
+            conn.close()
 
         receiver_display = receiver_username if receiver_username else str(receiver_id)
         results = [InlineQueryResultArticle(
             id='1',
-            title=f"{receiver_last_name} {receiver_display}",
+            title=f"{receiver_last_name} ({receiver_display})",
             input_message_content=InputTextMessageContent(f"{receiver_display} {text}", parse_mode='Markdown'),
             reply_markup=build_keyboard(user_id, receiver_id, text, receiver_last_name, receiver_username)
         )]
@@ -258,21 +267,22 @@ def build_keyboard(sender_id, receiver_id, text, receiver_last_name, receiver_us
         c = conn.cursor()
         c.execute('INSERT INTO whispers (sender_id, receiver_id, receiver_username, receiver_last_name, text) VALUES (?, ?, ?, ?, ?)',
                   (sender_id, receiver_id, receiver_username, receiver_last_name, text))
-        conn.commit()
         whisper_id = c.lastrowid
+        conn.commit()
 
         keyboard = [
             [InlineKeyboardButton("ببینم 🤔", callback_data=f"view_{whisper_id}"),
-             InlineKeyboardButton("پاسخ 💭", callback_data=f"reply_{whisper_id}")],
-            [InlineKeyboardButton("حذف 🤌🏼", callback_data=f"delete_{whisper_id}")]
-        ]
+             InlineKeyboardButton("پاسخ 💫", callback_data=f"reply_{whisper_id}")],
+            [InlineKeyboardButton("حذف 🤖", callback_data=f"delete_{whisper_id}")]
+        ])
         return InlineKeyboardMarkup(keyboard)
     except Exception as e:
         logger.error(f"Build keyboard error: {e}")
         traceback.print_exc()
         return None
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 # پردازش Callback Query
 async def button(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
@@ -298,9 +308,9 @@ async def button(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
             if user_id == receiver_id or user_id == sender_id:
                 tehran_tz = pytz.timezone('Asia/Tehran')
                 view_time = datetime.now(tehran_tz).strftime('%H:%M:%S')
-                c.execute('UPDATE whispers SET view_count = view_count + 1, view_time = ? WHERE id = ? AND receiver_id = ?', (view_time, whisper_id, receiver_id))
+                c.execute('UPDATE whispers SET view_count = view_count + 1 view_time = ? WHERE id = ? AND receiver_id = ?', (view_time, whisper_id, receiver_id))
                 conn.commit()
-                await query.answer(text=f"{BOT_USERNAME}\n\nمتن نجوا:\n{txt}", show_alert=True)
+                await query.answer(text=f"{BOT_USERNAME}\n\nمتن نجوا:\n{text}", show_alert=True)
             else:
                 c.execute('UPDATE whispers SET snoop_count = snoop_count + 1 WHERE id = ?', (whisper_id,))
                 conn.commit()
@@ -326,28 +336,28 @@ async def button(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
             conn.close()
 
 # به‌روزرسانی Inline Message
-async def update_inline_message(query, whisper_id):
+async def update_inline_message(update: object, whisper_id: int):
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-
         # گرفتن اطلاعات نجوا
+        c = conn.cursor()
         c.execute('SELECT receiver_username, receiver_last_name, view_count, view_time, snoop_count, deleted FROM whispers WHERE id = ?', (whisper_id,))
         whisper = c.fetchone()
         if not whisper:
-            return
+            return None
 
         receiver_username, receiver_last_name, view_count, view_time, snoop_count, deleted = whisper
 
         # گرفتن اطلاعات کاربر فعلی
-        current_user_id = query.from_user.id
+        current_user_id = update.callback_query.from_user.id
 
         # بررسی اینکه این کاربر، دریافت‌کننده است
         c.execute('SELECT receiver_id FROM whispers WHERE id = ?', (whisper_id,))
         result = c.fetchone()
         if not result:
             return
+        None
         receiver_id = result[0]
 
         if current_user_id == receiver_id:
@@ -357,28 +367,28 @@ async def update_inline_message(query, whisper_id):
             conn.commit()
 
         if deleted:
-            text = f"{receiver_last_name}\n\nاین نجوی توسط فرستنده پاک شده 💤"
+            text = f"{receiver_last_name}\n\nاین نجوی توسط فرستنده حذف شده 💤"
             keyboard = [[InlineKeyboardButton("پاسخ 💫", callback_data=f"reply_{whisper_id}")]]
         else:
             if view_count == 0:
                 text = f"{receiver_last_name}\n\nهنوز ندیده 😐\nتعداد فضولا: {snoop_count} نفر"
                 keyboard = [
                     [InlineKeyboardButton("ببینم 🤔", callback_data=f"view_{whisper_id}"),
-                     InlineKeyboardButton("پاسخ 💫", callback_data=f"reply_{whisper_id}")],
+                    InlineKeyboardButton("پاسخ 💫", callback_data=f"reply_{whisper_id}")],
                     [InlineKeyboardButton("حذف 🤖", callback_data=f"delete_{whisper_id}")]
-                ]
+                ])
             else:
-                snoop_text = f"تعداد فضولا: {snoop_count} نفر" if snoop_count > 0 else "تعداد فضولا"
-                text = f"{receiver_last_name}\n\nنجوا رو {view_count} {bar} دیده 😈 {view_time}\n{snoop_text}"
+                snoop_text = f"تعداد فضولا: {snoop_count} نفر" if snoop_count > 0 else "بدون فضول"
+                text = f"{receiver_last_name}\n\nنجوا رو {view_count} بار دیده 😈 {view_time}\n{snoop_text}"
                 keyboard = [
                     [InlineKeyboardButton("ببینم 🤔", callback_data=f"view_{whisper_id}"),
-                     InlineKeyboardButton("پاسخ 💫", callback_data=f"reply_{whisper_id}")],
+                    InlineKeyboardButton("پاسخ 💫", callback_data=f"reply_{whisper_id}")],
                     [InlineKeyboardButton("حذف 🤖", callback_data=f"delete_{whisper_id}")]
-                ]
+                ])
 
-        await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard))
+        await update.callback_query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard))
     except Exception as e:
-        logger.error(f"Update inline message error: {e}")
+        logger.error(f"Update inline message error: {str(e)}")
         traceback.print_exc()
     finally:
         if conn:
@@ -392,22 +402,27 @@ application.add_handler(CallbackQueryHandler(button))
 # غیرفعال کردن Webhook و اجرای Polling
 async def main():
     try:
-        logger.info("Initializing bot...")
+        logger.info("Initializing application...")
         await application.initialize()
         logger.info("Deleting any existing webhook...")
         await application.bot.delete_webhook(drop_pending_updates=True)
-        logger.info("Webhook deleted")
+        logger.info("Webhook deleted successfully")
         logger.info("Starting polling...")
+        await application.start()
         await application.run_polling(allowed_updates=telegram.Update.ALL_TYPES)
     except Exception as e:
-        logger.error(f"Error in main: {e}")
+        logger.error(f"Error in main: {str(e)}")
         traceback.print_exc()
     finally:
         logger.info("Shutting down application...")
-        if application.running:
-            await application.stop()
-            await application.shutdown()
-            logger.info("Application shut down")
+        try:
+            if application.running:
+                await application.stop()
+                await application.shutdown()
+                logger.info("Application shut down successfully")
+        except Exception as e:
+            logger.error(f"Error during shutdown: {str(e)}")
+            traceback.print_exc()
 
 # اجرای ربات
 if __name__ == "__main__":
@@ -416,6 +431,9 @@ if __name__ == "__main__":
     asyncio.set_event_loop(loop)
     try:
         loop.run_until_complete(main())
+    except Exception as e:
+        logger.error(f"Error running main loop: {str(e)}")
+        traceback.print_exc()
     finally:
         loop.close()
         logger.info("Event loop closed")
