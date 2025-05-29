@@ -7,9 +7,14 @@ from datetime import datetime
 import pytz
 import asyncio
 import traceback
+import logging
+
+# تنظیم لاگ‌گذاری
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # لاگ نسخه پکیج
-print(f"python-telegram-bot version: {telegram.__version__}")
+logger.info(f"python-telegram-bot version: {telegram.__version__}")
 
 # تنظیمات اولیه
 TOKEN = '7682323067:AAFcmkRvUZBQZJVQgCKgPqkaQb0TE2TPBPo'
@@ -19,19 +24,32 @@ SPONSOR_CHANNEL = '@XSecrtyou'
 # تنظیم Application
 application = ApplicationBuilder().token(TOKEN).build()
 
-# تنظیم پایگاه داده SQLite (استفاده از مسیر موقت)
+# Error Handler
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.error(f"Update {update} caused error: {context.error}")
+    if isinstance(context.error, telegram.error.Conflict):
+        logger.error("Conflict error detected. Trying to resolve...")
+        try:
+            await context.bot.delete_webhook(drop_pending_updates=True)
+            logger.info("Webhook deleted to resolve conflict")
+        except Exception as e:
+            logger.error(f"Error deleting webhook: {e}")
+
+application.add_error_handler(error_handler)
+
+# تنظیم پایگاه داده SQLite
 DB_PATH = '/tmp/whisper_bot.db'
 
 def init_db():
     try:
         conn = sqlite3.connect(DB_PATH)
-        print("Database connected successfully")
+        logger.info("Database connected successfully")
         c = conn.cursor()
         c.execute('''CREATE TABLE IF NOT EXISTS users (
                      user_id INTEGER PRIMARY KEY, 
                      username TEXT, 
                      last_name TEXT,
-                     started INTEGER DEFAULT 0)''')  # ستون جدید started
+                     started INTEGER DEFAULT 0)''')
         c.execute('''CREATE TABLE IF NOT EXISTS whispers (
                      id INTEGER PRIMARY KEY AUTOINCREMENT,
                      sender_id INTEGER,
@@ -50,7 +68,7 @@ def init_db():
                      receiver_last_name TEXT)''')
         conn.commit()
     except Exception as e:
-        print(f"Database init error: {e}")
+        logger.error(f"Database init error: {e}")
     finally:
         conn.close()
 
@@ -62,7 +80,7 @@ async def check_membership(update: telegram.Update, context: ContextTypes.DEFAUL
         member = await context.bot.get_chat_member(chat_id=SPONSOR_CHANNEL, user_id=user_id)
         return member.status in ['member', 'administrator', 'creator']
     except Exception as e:
-        print(f"Membership check error: {e}")
+        logger.error(f"Membership check error: {e}")
         return False
 
 # بررسی وضعیت کاربر (استارت کرده یا نه)
@@ -75,7 +93,7 @@ def check_user_started(user_id):
         result = c.fetchone()
         return result and result[0] == 1
     except Exception as e:
-        print(f"Check user started error: {e}")
+        logger.error(f"Check user started error: {e}")
         return False
     finally:
         if conn:
@@ -83,7 +101,7 @@ def check_user_started(user_id):
 
 # پیام خوشآمدگویی
 async def start(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
-    print("Start command received")
+    logger.info("Start command received")
     try:
         user = update.effective_user
         user_id = user.id
@@ -94,7 +112,7 @@ async def start(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute('INSERT OR REPLACE INTO users (user_id, username, last_name, started) VALUES (?, ?, ?, ?)', 
-                  (user_id, username, last_name, 1))  # تنظیم started به 1
+                  (user_id, username, last_name, 1))
         conn.commit()
         conn.close()
 
@@ -110,12 +128,12 @@ async def start(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
         if is_member:
             await context.bot.send_message(chat_id=user_id, text="عضویتت هم تایید شد. ✅")
     except Exception as e:
-        print(f"Start handler error: {e}")
+        logger.error(f"Start handler error: {e}")
         traceback.print_exc()
 
 # پردازش Inline Query
 async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
-    print("Inline query received:", update.inline_query.query)
+    logger.info(f"Inline query received: {update.inline_query.query}")
     try:
         query = update.inline_query.query.strip()
         user_id = update.inline_query.from_user.id
@@ -129,7 +147,7 @@ async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYP
             results = [InlineQueryResultArticle(
                 id='1',
                 title="لطفا قبل از شروع، روی این پیام کلیک کن 🤌🏼",
-                input_message_content=InputTextMessageContent(""),  # بدون پیام در گروه
+                input_message_content=InputTextMessageContent(""),
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton("شروع ربات", url="https://t.me/XSecrtbot?start=start")
                 ]])
@@ -196,7 +214,7 @@ async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYP
                 receiver_id = chat.id
                 receiver_last_name = chat.last_name or chat.first_name
             except Exception as e:
-                print(f"Error getting chat by username: {e}")
+                logger.error(f"Error getting chat by username: {e}")
                 receiver_last_name = "کاربر ناشناس"
         elif receiver.isdigit():
             receiver_id = int(receiver)
@@ -205,7 +223,7 @@ async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYP
                 receiver_last_name = chat.last_name or chat.first_name
                 receiver_username = chat.username
             except Exception as e:
-                print(f"Error getting chat by ID: {e}")
+                logger.error(f"Error getting chat by ID: {e}")
                 receiver_last_name = "کاربر ناشناس"
         else:
             results = [InlineQueryResultArticle(id='1', title='یوزرنیم یا آیدی عددی رو وارد کن 💡', input_message_content=InputTextMessageContent(''))]
@@ -229,7 +247,7 @@ async def inlinequery(update: telegram.Update, context: ContextTypes.DEFAULT_TYP
         )]
         await update.inline_query.answer(results)
     except Exception as e:
-        print(f"Inline query error: {e}")
+        logger.error(f"Inline query error: {e}")
         traceback.print_exc()
 
 # ساخت دکمه‌های Inline Keyboard
@@ -250,7 +268,7 @@ def build_keyboard(sender_id, receiver_id, text, receiver_last_name, receiver_us
         ]
         return InlineKeyboardMarkup(keyboard)
     except Exception as e:
-        print(f"Build keyboard error: {e}")
+        logger.error(f"Build keyboard error: {e}")
         traceback.print_exc()
         return None
     finally:
@@ -259,7 +277,7 @@ def build_keyboard(sender_id, receiver_id, text, receiver_last_name, receiver_us
 
 # پردازش Callback Query
 async def button(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
-    print("Button callback received:", update.callback_query.data)
+    logger.info(f"Button callback received: {update.callback_query.data}")
     conn = None
     try:
         query = update.callback_query
@@ -302,7 +320,7 @@ async def button(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer()
 
     except Exception as e:
-        print(f"Button handler error: {e}")
+        logger.error(f"Button handler error: {e}")
         traceback.print_exc()
     finally:
         if conn:
@@ -361,7 +379,7 @@ async def update_inline_message(query, whisper_id):
 
         await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard))
     except Exception as e:
-        print(f"Update inline message error: {e}")
+        logger.error(f"Update inline message error: {e}")
         traceback.print_exc()
     finally:
         if conn:
@@ -372,7 +390,17 @@ application.add_handler(CommandHandler("start", start))
 application.add_handler(InlineQueryHandler(inlinequery))
 application.add_handler(CallbackQueryHandler(button))
 
+# غیرفعال کردن Webhook احتمالی و اجرای Polling
+async def init_polling():
+    try:
+        logger.info("Deleting any existing webhook...")
+        await application.bot.delete_webhook(drop_pending_updates=True)
+        logger.info("Webhook deleted successfully")
+    except Exception as e:
+        logger.error(f"Error deleting webhook: {e}")
+
 # اجرای ربات
 if __name__ == "__main__":
-    print("Starting bot...")
-    application.run_polling()
+    logger.info("Starting bot with polling...")
+    asyncio.run(init_polling())
+    application.run_polling(allowed_updates=telegram.Update.ALL_TYPES)
