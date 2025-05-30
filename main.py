@@ -59,22 +59,25 @@ async def start(update: Update, context: CallbackContext) -> None:
     session.commit()
 
     # بررسی وضعیت عضویت در کانال
+    membership_text = ""
     try:
         member = await context.bot.get_chat_member(chat_id=SPONSOR_CHANNEL, user_id=user.id)
         if member.status in ['member', 'administrator', 'creator']:
             db_user.is_member = True
-            await context.bot.send_message(chat_id=user.id, text="عضویتت هم تایید شد. ✅")
+            membership_text = "عضویتت هم تایید شد. ✅"
         else:
             db_user.is_member = False
-            await context.bot.send_message(chat_id=user.id, text="لطفا عضو کانال اسپانسر شوید.")
+            membership_text = "لطفا عضو کانال اسپانسر شوید."
     except Exception as e:
         logger.error(f"Error checking membership: {e}")
-        await context.bot.send_message(chat_id=user.id, text="خطا در بررسی عضویت. لطفا بعدا تلاش کنید.")
+        membership_text = "خطا در بررسی عضویت. لطفا بعدا تلاش کنید."
 
     session.commit()
     session.close()
 
-    welcome_text = f"سلام {user.last_name} خوش آمدی 💭\n\nبا من میتونی پیام هاتو توی گروه، بصورت مخفیانه بفرستی برای گیرنده مدنظرت تا فقط تو و اون بتونید پیام رو بخونید!\n\nدر چهار حالت میتونی از من استفاده کنی:"
+    # مدیریت نام کاربر
+    display_name = user.last_name or user.first_name or "کاربر"
+    welcome_text = f"سلام {display_name} خوش آمدی 💭\n\nبا من میتونی پیام هاتو توی گروه، بصورت مخفیانه بفرستی برای گیرنده مدنظرت تا فقط تو و اون بتونید پیام رو بخونید!\n\nدر چهار حالت میتونی از من استفاده کنی:\n\n{membership_text}"
     keyboard = [
         [InlineKeyboardButton("نجوا یوزرنیم", callback_data='guide_username'),
          InlineKeyboardButton("نجوا عددی", callback_data='guide_userid')],
@@ -167,7 +170,15 @@ async def guide_history_callback(update: Update, context: CallbackContext) -> No
 async def back_to_menu_callback(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     await query.answer()
-    welcome_text = f"سلام {query.from_user.last_name} خوش آمدی 💭\n\nبا من میتونی پیام هاتو توی گروه، بصورت مخفیانه بفرستی برای گیرنده مدنظرت تا فقط تو و اون بتونید پیام رو بخونید!\n\nدر چهار حالت میتونی از من استفاده کنی:"
+    display_name = query.from_user.last_name or query.from_user.first_name or "کاربر"
+    welcome_text = f"سلام {display_name} خوش آمدی 💭\n\nبا من میتونی پیام هاتو توی گروه، بصورت مخفیانه بفرستی برای گیرنده مدنظرت تا فقط تو و اون بتونید پیام رو بخونید!\n\nدر چهار حالت میتونی از من استفاده کنی:"
+    session = Session()
+    user = session.query(User).filter_by(user_id=query.from_user.id).first()
+    if user and user.is_member:
+        welcome_text += "\n\nعضویتت هم تایید شد. ✅"
+    else:
+        welcome_text += "\n\nلطفا عضو کانال اسپانسر شوید."
+    session.close()
     keyboard = [
         [InlineKeyboardButton("نجوا یوزرنیم", callback_data='guide_username'),
          InlineKeyboardButton("نجوا عددی", callback_data='guide_userid')],
@@ -198,11 +209,33 @@ async def chat_member_update(update: Update, context: CallbackContext) -> None:
         if user and user.started_bot:
             if chat_member.new_chat_member.status in ['member', 'administrator', 'creator']:
                 user.is_member = True
-                await context.bot.send_message(chat_id=user_id, text="عضویتت هم تایید شد. ✅")
+                membership_text = "عضویتت هم تایید شد. ✅"
             else:
                 user.is_member = False
-                await context.bot.send_message(chat_id=user_id, text="شما از کانال اسپانسر لفت دادی، لطفا برای استفاده از ربات، مجددا عضو کانال شوید.")
-        session.commit()
+                membership_text = "شما از کانال اسپانسر لفت دادی، لطفا برای استفاده از ربات، مجددا عضو کانال شوید."
+            session.commit()
+            # به‌روزرسانی پیام خوش‌آمدگویی
+            display_name = chat_member.user.last_name or chat_member.user.first_name or "کاربر"
+            welcome_text = f"سلام {display_name} خوش آمدی 💭\n\nبا من میتونی پیام هاتو توی گروه، بصورت مخفیانه بفرستی برای گیرنده مدنظرت تا فقط تو و اون بتونید پیام رو بخونید!\n\nدر چهار حالت میتونی از من استفاده کنی:\n\n{membership_text}"
+            keyboard = [
+                [InlineKeyboardButton("نجوا یوزرنیم", callback_data='guide_username'),
+                 InlineKeyboardButton("نجوا عددی", callback_data='guide_userid')],
+                [InlineKeyboardButton("نجوا ریپلای", callback_data='guide_reply'),
+                 InlineKeyboardButton("نجوا تاریخچه", callback_data='guide_history')],
+                [InlineKeyboardButton("عضویت در کانال اسپانسر", url=f'https://t.me/{SPONSOR_CHANNEL[1:]}')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            message_id = context.user_data.get('welcome_message_id')
+            try:
+                await context.bot.edit_message_text(
+                    chat_id=user_id,
+                    message_id=message_id,
+                    text=welcome_text,
+                    reply_markup=reply_markup
+                )
+            except Exception as e:
+                logger.error(f"Error editing message: {e}")
+                await context.bot.send_message(chat_id=user_id, text=welcome_text, reply_markup=reply_markup)
         session.close()
 
 # تابع دریافت گیرنده‌های سابق
@@ -247,41 +280,31 @@ async def inline_query(update: Update, context: CallbackContext) -> None:
         results = []
         if not query:
             logger.info(f"Empty query for user {user_id}")
-            if update.inline_query.message and update.inline_query.message.reply_to_message:
+            results.append(
+                InlineQueryResultArticle(
+                    id='enter_id',
+                    title='یوزرنیم یا آیدی عددی رو وارد کن 💡',
+                    description='مثال: @XSecrtbot @username متن نجوا',
+                    input_message_content=InputTextMessageContent('لطفا یوزرنیم یا آیدی عددی و متن نجوا را وارد کنید.')
+                )
+            )
+            results.append(
+                InlineQueryResultArticle(
+                    id='reply',
+                    title='روی پیام کاربر ریپلای کن💡',
+                    description='مثال: روی پیام ریپلای کن و @XSecrtbot متن نجوا را بنویس',
+                    input_message_content=InputTextMessageContent('لطفا روی پیام کاربر ریپلای کنید و @XSecrtbot را تایپ کنید.')
+                )
+            )
+            for recipient in get_previous_recipients(user_id):
+                identifier = f"@{recipient.username}" if recipient.username else str(recipient.user_id)
                 results.append(
                     InlineQueryResultArticle(
-                        id='write_text',
-                        title='متن نجوا را بنویسید',
-                        description='مثال: سلام چطوری؟',
-                        input_message_content=InputTextMessageContent('لطفا متن نجوا را وارد کنید.')
+                        id=f'recipient_{recipient.user_id}',
+                        title=f'{recipient.last_name or "کاربر"} ({identifier})',
+                        input_message_content=InputTextMessageContent(f'{BOT_USERNAME} {identifier} ')
                     )
                 )
-            else:
-                results.append(
-                    InlineQueryResultArticle(
-                        id='enter_id',
-                        title='یوزرنیم یا آیدی عددی رو وارد کن 💡',
-                        description='مثال: @XSecrtbot @username متن نجوا',
-                        input_message_content=InputTextMessageContent('لطفا یوزرنیم یا آیدی عددی و متن نجوا را وارد کنید.')
-                    )
-                )
-                results.append(
-                    InlineQueryResultArticle(
-                        id='reply',
-                        title='روی پیام کاربر ریپلای کن💡',
-                        description='مثال: روی پیام ریپلای کن و @XSecrtbot متن نجوا را بنویس',
-                        input_message_content=InputTextMessageContent('لطفا روی پیام کاربر ریپلای کنید و @XSecrtbot را تایپ کنید.')
-                    )
-                )
-                for recipient in get_previous_recipients(user_id):
-                    identifier = f"@{recipient.username}" if recipient.username else str(recipient.user_id)
-                    results.append(
-                        InlineQueryResultArticle(
-                            id=f'recipient_{recipient.user_id}',
-                            title=f'{recipient.last_name or "کاربر"} ({identifier})',
-                            input_message_content=InputTextMessageContent(f'{BOT_USERNAME} {identifier} ')
-                        )
-                    )
         else:
             parts = query.split(' ', 1)
             logger.info(f"Query parts for user {user_id}: {parts}")
@@ -323,25 +346,6 @@ async def inline_query(update: Update, context: CallbackContext) -> None:
                             title='حالا متن نجوا رو بنویس 💡',
                             description='مثال: سلام چطوری؟',
                             input_message_content=InputTextMessageContent('لطفا متن نجوا را وارد کنید.')
-                        )
-                    )
-            if update.inline_query.message and update.inline_query.message.reply_to_message and query:
-                reply_user = update.inline_query.message.reply_to_message.from_user
-                recipient = session.query(User).filter_by(user_id=reply_user.id).first()
-                if not recipient:
-                    logger.info(f"Reply recipient {reply_user.id} not found, creating new recipient")
-                    recipient = User(user_id=reply_user.id, username=reply_user.username,
-                                    first_name=reply_user.first_name, last_name=reply_user.last_name,
-                                    started_bot=True)
-                    session.add(recipient)
-                    session.commit()
-                if recipient:
-                    results.append(
-                        InlineQueryResultArticle(
-                            id=f'send_reply_{recipient.user_id}',
-                            title=f'{recipient.last_name or "کاربر"} ({"@" + recipient.username if recipient.username else recipient.user_id})',
-                            description=query,
-                            input_message_content=InputTextMessageContent(f'نجوا برای {recipient.last_name or "کاربر"}')
                         )
                     )
 
