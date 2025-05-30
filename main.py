@@ -83,7 +83,8 @@ async def start(update: Update, context: CallbackContext) -> None:
         [InlineKeyboardButton("عضویت در کانال اسپانسر", url=f'https://t.me/{SPONSOR_CHANNEL[1:]}')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await context.bot.send_message(chat_id=user.id, text=welcome_text, reply_markup=reply_markup)
+    message = await context.bot.send_message(chat_id=user.id, text=welcome_text, reply_markup=reply_markup)
+    context.user_data['welcome_message_id'] = message.message_id  # ذخیره message_id
 
 # توابع راهنمای جزئی با لاگ
 async def guide_username_callback(update: Update, context: CallbackContext) -> None:
@@ -91,28 +92,81 @@ async def guide_username_callback(update: Update, context: CallbackContext) -> N
     logger.info(f"Guide username callback triggered by user {query.from_user.id}")
     await query.answer()
     text = "حالت اول، من رو تایپ کن، یوزرنیم گیرنده رو تایپ کن، متن نجوات رو بنویس.\n\nمثال:\n@XSecrtbot @username سلام چطوری؟ 😈\n\nضمنا یادت نره، در هر چهار حالت، بعد از اتمام تایپ متن نجوات، باید روی گزینه ارسال نجوا، کلیک کنی تا نجوات ساخته و ارسال بشه."
-    await context.bot.send_message(chat_id=query.from_user.id, text=text)
+    keyboard = [[InlineKeyboardButton("بازگشت", callback_data='back_to_menu')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    message_id = context.user_data.get('welcome_message_id')
+    await context.bot.edit_message_text(
+        chat_id=query.from_user.id,
+        message_id=message_id,
+        text=text,
+        reply_markup=reply_markup
+    )
 
 async def guide_userid_callback(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     logger.info(f"Guide userid callback triggered by user {query.from_user.id}")
     await query.answer()
     text = "حالت دوم، من رو تایپ کن، آیدی عددی گیرنده رو تایپ کن، متن نجوات رو بنویس.\n\nمثال:\n@XSecrtbot 1234567890 سلام چطوری؟ 😈\n\nضمنا یادت نره، در هر چهار حالت، بعد از اتمام تایپ متن نجوات، باید روی گزینه ارسال نجوا، کلیک کنی تا نجوات ساخته و ارسال بشه."
-    await context.bot.send_message(chat_id=query.from_user.id, text=text)
+    keyboard = [[InlineKeyboardButton("بازگشت", callback_data='back_to_menu')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    message_id = context.user_data.get('welcome_message_id')
+    await context.bot.edit_message_text(
+        chat_id=query.from_user.id,
+        message_id=message_id,
+        text=text,
+        reply_markup=reply_markup
+    )
 
 async def guide_reply_callback(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     logger.info(f"Guide reply callback triggered by user {query.from_user.id}")
     await query.answer()
     text = "حالت سوم، من رو تایپ کن، روی یکی از پیام های گیرنده ریپلای کن، متن نجوات رو بنویس.\n\nمثال:\n@XSecrtbot سلام چطوری؟ 😈\n\nضمنا یادت نره، در هر چهار حالت، بعد از اتمام تایپ متن نجوات، باید روی گزینه ارسال نجوا، کلیک کنی تا نجوات ساخته و ارسال بشه."
-    await context.bot.send_message(chat_id=query.from_user.id, text=text)
+    keyboard = [[InlineKeyboardButton("بازگشت", callback_data='back_to_menu')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    message_id = context.user_data.get('welcome_message_id')
+    await context.bot.edit_message_text(
+        chat_id=query.from_user.id,
+        message_id=message_id,
+        text=text,
+        reply_markup=reply_markup
+    )
 
 async def guide_history_callback(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     logger.info(f"Guide history callback triggered by user {query.from_user.id}")
     await query.answer()
     text = "حالت چهارم، اگر قبلا از طریق من به گیرنده مدنظرت نجوا دادی، وقتی من رو تایپ کنی، گزینه ارسال نجوا به اون کاربر بالای صفحه کیبوردت نشون داده میشه، درنتیجه بعد از تایپ یوزرنیم من، فقط کافیه متن نجوات رو بنویسی.\n\nضمنا یادت نره، در هر چهار حالت، بعد از اتمام تایپ متن نجوات، باید روی گزینه ارسال نجوا، کلیک کنی تا نجوات ساخته و ارسال بشه."
-    await context.bot.send_message(chat_id=query.from_user.id, text=text)
+    keyboard = [[InlineKeyboardButton("بازگشت", callback_data='back_to_menu')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    message_id = context.user_data.get('welcome_message_id')
+    await context.bot.edit_message_text(
+        chat_id=query.from_user.id,
+        message_id=message_id,
+        text=text,
+        reply_markup=reply_markup
+    )
+
+# تابع بازگشت به منوی اصلی
+async def back_to_menu_callback(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    await query.answer()
+    welcome_text = f"سلام {query.from_user.last_name} خوش آمدی 💭\n\nبا من میتونی پیام هاتو توی گروه، بصورت مخفیانه بفرستی برای گیرنده مدنظرت تا فقط تو و اون بتونید پیام رو بخونید!\n\nدر چهار حالت میتونی از من استفاده کنی:"
+    keyboard = [
+        [InlineKeyboardButton("نجوا یوزرنیم", callback_data='guide_username'),
+         InlineKeyboardButton("نجوا عددی", callback_data='guide_userid')],
+        [InlineKeyboardButton("نجوا ریپلای", callback_data='guide_reply'),
+         InlineKeyboardButton("نجوا تاریخچه", callback_data='guide_history')],
+        [InlineKeyboardButton("عضویت در کانال اسپانسر", url=f'https://t.me/{SPONSOR_CHANNEL[1:]}')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    message_id = context.user_data.get('welcome_message_id')
+    await context.bot.edit_message_text(
+        chat_id=query.from_user.id,
+        message_id=message_id,
+        text=welcome_text,
+        reply_markup=reply_markup
+    )
 
 # تابع مدیریت عضویت در کانال
 async def chat_member_update(update: Update, context: CallbackContext) -> None:
@@ -147,7 +201,18 @@ async def inline_query(update: Update, context: CallbackContext) -> None:
     session = Session()
     user = session.query(User).filter_by(user_id=user_id).first()
 
-    if not user or not user.started_bot or not user.is_member:
+    logger.info(f"Inline query by user {user_id}: '{query}'")
+
+    if not user:
+        logger.info(f"User {user_id} not found in database, creating new user")
+        user = User(user_id=user_id, username=update.inline_query.from_user.username,
+                    first_name=update.inline_query.from_user.first_name,
+                    last_name=update.inline_query.from_user.last_name, started_bot=True)
+        session.add(user)
+        session.commit()
+
+    if not user.started_bot or not user.is_member:
+        logger.info(f"User {user_id} not started or not member: started_bot={user.started_bot}, is_member={user.is_member}")
         results = [
             InlineQueryResultArticle(
                 id='start_bot',
@@ -161,6 +226,7 @@ async def inline_query(update: Update, context: CallbackContext) -> None:
     else:
         results = []
         if not query:
+            logger.info(f"Empty query for user {user_id}")
             if update.inline_query.message and update.inline_query.message.reply_to_message:
                 results.append(
                     InlineQueryResultArticle(
@@ -197,6 +263,7 @@ async def inline_query(update: Update, context: CallbackContext) -> None:
                         )
                     )
         else:
+            logger.info(f"Query parts for user {user_id}: {parts}")
             parts = query.split(' ', 1)
             if len(parts) == 2:
                 identifier, text = parts
@@ -204,16 +271,28 @@ async def inline_query(update: Update, context: CallbackContext) -> None:
                 if identifier.startswith('@'):
                     username = identifier[1:]
                     recipient = session.query(User).filter_by(username=username).first()
+                    # ثبت خودکار گیرنده اگر وجود ندارد
+                    if not recipient:
+                        logger.info(f"Recipient {username} not found, creating new recipient")
+                        recipient = User(user_id=username, username=username, started_bot=False)
+                        session.add(recipient)
+                        session.commit()
                 elif identifier.isdigit():
                     recipient_id = int(identifier)
                     recipient = session.query(User).filter_by(user_id=recipient_id).first()
-                if recipient and recipient.started_bot:
+                    if not recipient:
+                        logger.info(f"Recipient {recipient_id} not found, creating new recipient")
+                        recipient = User(user_id=recipient_id, started_bot=False)
+                        session.add(recipient)
+                        session.commit()
+                if recipient:
+                    logger.info(f"Recipient {recipient.user_id} found or created for user {user_id}")
                     results.append(
                         InlineQueryResultArticle(
                             id=f'send_{recipient.user_id}',
-                            title=f'{recipient.last_name} ({"@" + recipient.username if recipient.username else recipient.user_id})',
+                            title=f'{recipient.last_name or "کاربر"} ({"@" + recipient.username if recipient.username else recipient.user_id})',
                             description=text,
-                            input_message_content=InputTextMessageContent(f'نجوا برای {recipient.last_name}')
+                            input_message_content=InputTextMessageContent(f'نجوا برای {recipient.last_name or "کاربر"}')
                         )
                     )
             elif len(parts) == 1:
@@ -223,23 +302,32 @@ async def inline_query(update: Update, context: CallbackContext) -> None:
                         InlineQueryResultArticle(
                             id='write_text',
                             title='حالا متن نجوا رو بنویس 💡',
-                            description='مثال: سلام چطوری؟',
+                            description='مثال: سلام چطور؟',
                             input_message_content=InputTextMessageContent('لطفا متن نجوا را وارد کنید.')
                         )
                     )
             if update.inline_query.message and update.inline_query.message.reply_to_message and query:
-                recipient = session.query(User).filter_by(user_id=update.inline_query.message.reply_to_message.from_user.id).first()
-                if recipient and recipient.started_bot:
+                reply_user = update.inline_query.message.reply_to_message.from_user
+                recipient = session.query(User).filter_by(user_id=reply_user.id).first()
+                if not recipient:
+                    logger.info(f"Reply recipient {reply_user.id} not found, creating new recipient")
+                    recipient = User(user_id=reply_user.id, username=reply_user.username,
+                                    first_name=reply_user.first_name, last_name=reply_user.last_name,
+                                    started_bot=True)
+                    session.add(recipient)
+                    session.commit()
+                if recipient:
                     results.append(
                         InlineQueryResultArticle(
                             id=f'send_reply_{recipient.user_id}',
-                            title=f'{recipient.last_name} ({"@" + recipient.username if recipient.username else recipient.user_id})',
+                            title=f'{recipient.last_name or "کاربر"} ({"@" + recipient.username if recipient.username else recipient.user_id})',
                             description=query,
-                            input_message_content=InputTextMessageContent(f'نجوا برای {recipient.last_name}')
+                            input_message_content=InputTextMessageContent(f'نجو برای {recipient.last_name or "کاربر"}')
                         )
                     )
 
     session.close()
+    logger.info(f"Returning {len(results)} results for user {user_id}")
     await update.inline_query.answer(results, cache_time=0)
 
 # تابع مدیریت انتخاب گزینه Inline Query
@@ -254,6 +342,9 @@ async def chosen_inline_result(update: Update, context: CallbackContext) -> None
     if sender and sender.is_member and sender.started_bot:
         if 'send_' in result.result_id:
             parts = query.split(' ', 1)
+            if len(parts) != 2:
+                logger.error(f"Invalid query format in chosen_inline_result: {query}")
+                return
             identifier, text = parts
             recipient = None
             if identifier.startswith('@'):
@@ -272,7 +363,7 @@ async def chosen_inline_result(update: Update, context: CallbackContext) -> None
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 await context.bot.edit_message_text(
                     inline_message_id=inline_message_id,
-                    text=f"{recipient.last_name}\n\nهنوز ندیده 😐\nتعداد فضول ها: 0",
+                    text=f"{recipient.last_name or 'کاربر'}\n\nهنوز ندیده 😐\nتعداد فضول ها: 0",
                     reply_markup=reply_markup
                 )
 
@@ -303,7 +394,7 @@ async def button(update: Update, context: CallbackContext) -> None:
             if not whisper.is_deleted:
                 seen_text = f"نجوا رو {whisper.seen_count} بار دیده 😈 {whisper.seen_timestamp.strftime('%H:%M')}" if whisper.seen_count > 0 else "هنوز ندیده 😐"
                 snooper_text = f"تعداد فضول ها: {whisper.snooper_count}" if whisper.snooper_count <= 1 else f"تعداد فضول ها: {whisper.snooper_count} نفر"
-                message_text = f"{recipient.last_name}\n\n{seen_text}\n{snooper_text}"
+                message_text = f"{recipient.last_name or 'کاربر'}\n\n{seen_text}\n{snooper_text}"
                 keyboard = [
                     [InlineKeyboardButton("ببینم 🤔", callback_data=f'see_{whisper.id}'),
                      InlineKeyboardButton("پاسخ 💭", callback_data=f'reply_{whisper.id}')],
@@ -311,8 +402,8 @@ async def button(update: Update, context: CallbackContext) -> None:
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
             else:
-                message_text = f"{recipient.last_name}\n\nاین نجوا توسط فرستنده، پاک شده 💤"
-                keyboard = [[InlineKeyboardButton("پاسخ 💭", callback_data=f'reply_{whisper.id}')]]
+                message_text = f"{recipient.last_name or 'کاربر'}\n\nاین نجوا توسط فرستنده، پاک شده 💤"
+                keyboard = [[InlineKeyboardButton("پاسخ 💭", callback_data=f'reply_{whisper.id}')]
                 reply_markup = InlineKeyboardMarkup(keyboard)
             await context.bot.edit_message_text(
                 inline_message_id=whisper.inline_message_id,
@@ -343,11 +434,11 @@ async def button(update: Update, context: CallbackContext) -> None:
             whisper.is_deleted = True
             session.commit()
             recipient = session.query(User).filter_by(user_id=whisper.recipient_id).first()
-            keyboard = [[InlineKeyboardButton("پاسخ 💭", callback_data=f'reply_{whisper.id}')]]
+            keyboard = [[InlineKeyboardButton("پاسخ 💭", callback_data=f'reply_{whisper.id}')]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await context.bot.edit_message_text(
                 inline_message_id=whisper.inline_message_id,
-                text=f"{recipient.last_name}\n\nاین نجوا توسط فرستنده، پاک شده 💤",
+                text=f"{recipient.last_name or 'کاربر'}\n\nاین نجوا توسط فرستنده، پاک شده 💤",
                 reply_markup=reply_markup
             )
             await query.answer("نجوا حذف شد!", show_alert=True)
@@ -363,6 +454,7 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(guide_userid_callback, pattern='guide_userid'))
     application.add_handler(CallbackQueryHandler(guide_reply_callback, pattern='guide_reply'))
     application.add_handler(CallbackQueryHandler(guide_history_callback, pattern='guide_history'))
+    application.add_handler(CallbackQueryHandler(back_to_menu_callback, pattern='back_to_menu'))
     application.add_handler(ChatMemberHandler(chat_member_update))
     application.add_handler(InlineQueryHandler(inline_query))
     application.add_handler(ChosenInlineResultHandler(chosen_inline_result))
