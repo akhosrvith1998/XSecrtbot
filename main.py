@@ -1,7 +1,7 @@
 import logging
 from telegram import (
     Update,
-    InlineKeyboardButton,
+    InlineKeyboardButton, 
     InlineKeyboardMarkup,
     InlineQueryResultArticle,
     InputTextMessageContent,
@@ -46,7 +46,7 @@ def init_db():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     
-    # ایجاد جدول کاربران (بدون فیلد joined_sponsor)
+    # ایجاد جدول کاربران
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS users (
         user_id INTEGER PRIMARY KEY,
