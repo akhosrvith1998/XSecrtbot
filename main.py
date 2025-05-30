@@ -1,7 +1,7 @@
 import os
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InlineQueryResultArticle, InputTextMessageContent
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackContext, InlineQueryHandler, ChosenInlineResultHandler, CallbackQueryHandler, ChatMemberHandler, Filters
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackContext, InlineQueryHandler, ChosenInlineResultHandler, CallbackQueryHandler, ChatMemberHandler
 from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -356,7 +356,7 @@ async def inline_query(update: Update, context: CallbackContext) -> None:
 # تابع مدیریت پیام‌های ریپلای‌شده
 async def handle_reply_message(update: Update, context: CallbackContext) -> None:
     message = update.message
-    if message.reply_to_message and BOT_USERNAME in message.text:
+    if message.reply_to_message and BOT_USERNAME in (message.text or ''):
         user_id = update.effective_user.id
         session = Session()
         user = session.query(User).filter_by(user_id=user_id).first()
@@ -406,44 +406,43 @@ async def chosen_inline_result(update: Update, context: CallbackContext) -> None
     session = Session()
     sender = session.query(User).filter_by(user_id=user_id).first()
 
-    logger.info(f"Chosen inline result by user {user_id}: result_id={result.result_id}, query='{query}'")
+    logger.info(f"Chosen inline result by user {user_id}: result_id={id}, query='{query}'")
 
     if sender and sender.is_member and sender.started_bot:
-        if 'send_' in result.result_id:
-            parts = query.split(' ', 1)
-            if len(parts) != 2:
-                logger.error(f"Invalid query format in chosen_inline_result: {query}")
-                session.close()
-                return
-            identifier, text = parts
-            recipient = None
-            if identifier.startswith('@'):
-                recipient = session.query(User).filter_by(username=identifier[1:]).first()
-            elif identifier.isdigit():
-                recipient = session.query(User).filter_by(user_id=int(identifier)).first()
-            if recipient:
-                whisper = Whisper(sender_id=user_id, recipient_id=recipient.user_id, message_text=text, inline_message_id=inline_message_id)
-                session.add(whisper)
-                session.commit()
-                keyboard = [
-                    [InlineKeyboardButton("ببینم 🤔", callback_data=f'see_{whisper.id}'),
-                     InlineKeyboardButton("پاسخ 💭", callback_data=f'reply_{whisper.id}')],
-                    [InlineKeyboardButton("حذف 🤌🏼", callback_data=f'delete_{whisper.id}')]
-                ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                try:
+        try:
+            if 'send_' in result.result_id:
+                parts = query.split(' ', 1)
+                if len(parts) != 2:
+                    logger.error(f"Invalid query format in chosen_inline_result: {query}")
+                    return
+                identifier, text = parts
+                recipient = None
+                if identifier.startswith('@'):
+                    recipient = session.query(User).filter_by(username=identifier[1:]).first()
+                elif identifier.isdigit():
+                    recipient = session.query(User).filter_by(user_id=int(identifier)).first()
+                if recipient:
+                    whisper = Whisper(sender_id=user_id, recipient_id=recipient.user_id, message_text=text, inline_message_id=inline_message_id)
+                    session.add(whisper)
+                    session.commit()
+                    keyboard = [
+                        [InlineKeyboardButton("ببینم 🤔", callback_data=f'see_{whisper.id}'),
+                         InlineKeyboardButton("پاسخ 💪", callback_data=f'reply_{whisper.id}')],
+                        [InlineKeyboardButton("حذف 🤌", callback_data=f'delete_{whisper.id}')]
+                    ]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
                     await context.bot.edit_message_text(
                         inline_message_id=inline_message_id,
-                        text=f"{recipient.last_name or 'کاربر'}\n\nهنوز ندیده 😐\nتعداد فضول ها: 0",
+                        text=f"{recipient.last_name or 'کاربر'}\n\nهنوز ندیده 😐\nتعداد فضول: 0",
                         reply_markup=reply_markup
                     )
                     logger.info(f"Inline message edited successfully for whisper {whisper.id}")
-                except Exception as e:
-                    logger.error(f"Error editing inline message: {e}")
-                    await context.bot.send_message(
-                        chat_id=user_id,
-                        text=f"خطا در ارسال نجوا. لطفا دوباره تلاش کنید."
-                    )
+        except Exception as e:
+            logger.error(f"Error in chosen_inline_result: {e}")
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=f"خطا در ارسال نجوا. لطفا دوباره تلاش کنید."
+            )
 
     session.close()
 
@@ -458,34 +457,34 @@ async def button(update: Update, context: CallbackContext) -> None:
         whisper_id = int(data.split('_')[1])
         whisper = session.query(Whisper).filter_by(id=whisper_id).first()
         if whisper:
-            if user_id == whisper.sender_id or user_id == whisper.recipient_id:
-                if user_id == whisper.recipient_id and not whisper.is_deleted:
-                    whisper.seen_count += 1
-                    whisper.seen_timestamp = datetime.datetime.now(pytz.timezone('Asia/Tehran'))
-                    session.commit()
-                text = f"XSecret 💭\n\n{whisper.message_text}" if not whisper.is_deleted else "این نجوا توسط فرستنده، پاک شده 💤"
-                await query.answer(text=text, show_alert=True)
-            else:
-                whisper.snooper_count += 1
-                session.commit()
-                await query.answer("شما مجاز به دیدن این نجوا نیستید!", show_alert=True)
-
-            recipient = session.query(User).filter_by(user_id=whisper.recipient_id).first()
-            if not whisper.is_deleted:
-                seen_text = f"نجوا رو {whisper.seen_count} بار دیده 😈 {whisper.seen_timestamp.strftime('%H:%M')}" if whisper.seen_count > 0 else "هنوز ندیده 😐"
-                snooper_text = f"تعداد فضول ها: {whisper.snooper_count}" if whisper.snooper_count <= 1 else f"تعداد فضول ها: {whisper.snooper_count} نفر"
-                message_text = f"{recipient.last_name or 'کاربر'}\n\n{seen_text}\n{snooper_text}"
-                keyboard = [
-                    [InlineKeyboardButton("ببینم 🤔", callback_data=f'see_{whisper.id}'),
-                     InlineKeyboardButton("پاسخ 💭", callback_data=f'reply_{whisper.id}')],
-                    [InlineKeyboardButton("حذف 🤌🏼", callback_data=f'delete_{whisper.id}')]
-                ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-            else:
-                message_text = f"{recipient.last_name or 'کاربر'}\n\nاین نجوا توسط فرستنده، پاک شده 💤"
-                keyboard = [[InlineKeyboardButton("پاسخ 💭", callback_data=f'reply_{whisper.id}')]]
-                reply_markup = InlineKeyboardMarkup(keyboard)
             try:
+                if user_id == whisper.sender_id or user_id == whisper.recipient_id:
+                    if user_id == whisper.recipient_id and not whisper.is_deleted:
+                        whisper.seen_count += 1
+                        whisper.seen_timestamp = datetime.datetime.now(pytz.timezone('Asia/Tehran'))
+                        session.commit()
+                    text = f"XSecret 💭\n\n{whisper.message_text}" if not whisper.is_deleted else "این نجوا توسط فرستنده، پاک شده 💤"
+                    await query.answer(text=text, show_alert=True)
+                else:
+                    whisper.snooper_count += 1
+                    session.commit()
+                    await query.answer("شما مجاز به دیدن این نجوا نیستید!", show_alert=True)
+
+                recipient = session.query(User).filter_by(user_id=whisper.recipient_id).first()
+                if not whisper.is_deleted:
+                    seen_text = f"نجوا رو {whisper.seen_count} بار دیده 😈 ({whisper.seen_timestamp.strftime('%H:%M')})" if whisper.seen_count > 0 else "هنوز ندیده 😐"
+                    snooper_text = f"تعداد فضول: {whisper.snooper_count}" if whisper.snooper_count <= 1 else f"تعداد فضول: {whisper.snooper_count} نفر"
+                    message_text = f"{recipient.last_name or 'کاربر'}\n\n{seen_text}\n{snooper_text}"
+                    keyboard = [
+                        [InlineKeyboardButton("ببینم 🤔", callback_data=f'see_{whisper.id}'),
+                         InlineKeyboardButton("پاسخ 💪", callback_data=f'reply_{whisper.id}')],
+                        [InlineKeyboardButton("حذف 🤖", callback_data=f'delete_{whisper.id}')]
+                    ]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                else:
+                    message_text = f"{recipient.last_name or 'کاربر'}\n\nاین نجوا توسط فرستنده، پاک شده 💤"
+                    keyboard = [[InlineKeyboardButton("پاسخ 💪", callback_data=f'reply_{whisper.id}')]]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
                 await context.bot.edit_message_text(
                     inline_message_id=whisper.inline_message_id,
                     text=message_text,
@@ -498,41 +497,44 @@ async def button(update: Update, context: CallbackContext) -> None:
         whisper_id = int(data.split('_')[1])
         whisper = session.query(Whisper).filter_by(id=whisper_id).first()
         if whisper:
-            sender = session.query(User).filter_by(user_id=whisper.sender_id).first()
-            identifier = f"@{sender.username}" if sender.username else str(sender.user_id)
-            await query.answer()
-            await context.bot.edit_message_reply_markup(
-                inline_message_id=query.inline_message_id,
-                reply_markup=query.message.reply_markup
-            )
-            await context.bot.send_message(
-                chat_id=query.from_user.id,
-                text=f"برای پاسخ، متن نجوا را بعد از این تایپ کنید:\n{BOT_USERNAME} {identifier} "
-            )
+            try:
+                sender = session.query(User).filter_by(user_id=whisper.sender_id).first()
+                identifier = f"@{sender.username}" if sender.username else str(sender.user_id)
+                await query.answer()
+                await context.bot.edit_message_reply_markup(
+                    inline_message_id=query.inline_message_id,
+                    reply_markup=query.message.reply_markup
+                )
+                await context.bot.send_message(
+                    chat_id=query.from_user.id,
+                    text=f"برای پاسخ، متن نجوا را بعد از این تایپ کنید:\n{BOT_USERNAME} {identifier} "
+                )
+            except Exception as e:
+                logger.error(f"Error handling reply button: {e}")
 
     elif data.startswith('delete_'):
         whisper_id = int(data.split('_')[1])
         whisper = session.query(Whisper).filter_by(id=whisper_id).first()
         if whisper and user_id == whisper.sender_id:
-            whisper.is_deleted = True
-            session.commit()
-            recipient = session.query(User).filter_by(user_id=whisper.recipient_id).first()
-            keyboard = [[InlineKeyboardButton("پاسخ 💭", callback_data=f'reply_{whisper.id}')]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
             try:
+                whisper.is_deleted = True
+                session.commit()
+                recipient = session.query(User).filter_by(user_id=whisper.recipient_id).first()
+                keyboard = [[InlineKeyboardButton("پاسخ 💪", callback_data=f'reply_{whisper.id}')]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
                 await context.bot.edit_message_text(
                     inline_message_id=whisper.inline_message_id,
                     text=f"{recipient.last_name or 'کاربر'}\n\nاین نجوا توسط فرستنده، پاک شده 💤",
                     reply_markup=reply_markup
                 )
+                await query.answer("نجوا حذف شد!", show_alert=True)
             except Exception as e:
                 logger.error(f"Error editing inline message in delete: {e}")
-            await query.answer("نجوا حذف شد!", show_alert=True)
 
     session.close()
 
 # تابع اصلی
-def main() -> None:
+def main():
     application = Application.builder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
@@ -540,12 +542,12 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(guide_userid_callback, pattern='guide_userid'))
     application.add_handler(CallbackQueryHandler(guide_reply_callback, pattern='guide_reply'))
     application.add_handler(CallbackQueryHandler(guide_history_callback, pattern='guide_history'))
-    application.add_handler(CallbackQueryHandler(back_to_menu_callback, pattern='back_to_menu'))
+    application.add_handler(CallbackQueryHandler(back_to_menu, pattern='back_to_menu'))
     application.add_handler(ChatMemberHandler(chat_member_update))
     application.add_handler(InlineQueryHandler(inline_query))
     application.add_handler(ChosenInlineResultHandler(chosen_inline_result))
     application.add_handler(CallbackQueryHandler(button, pattern='^(see_|reply_|delete_)'))
-    application.add_handler(MessageHandler(Filters.text & Filters.reply & Filters.regex(BOT_USERNAME), handle_reply_message))
+    application.add_handler(MessageHandler(filters=filters.TEXT & ~filters.COMMAND, callback=handle_reply_message))
 
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
