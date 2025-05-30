@@ -1,7 +1,7 @@
 import os
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InlineQueryResultArticle, InputTextMessageContent
-from telegram.ext import Application, CommandHandler, CallbackContext, InlineQueryHandler, ChosenInlineResultHandler, CallbackQueryHandler, ChatMemberHandler
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackContext, InlineQueryHandler, ChosenInlineResultHandler, CallbackQueryHandler, ChatMemberHandler, Filters
 from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -332,9 +332,9 @@ async def inline_query(update: Update, context: CallbackContext) -> None:
                     results.append(
                         InlineQueryResultArticle(
                             id=f'send_{recipient.user_id}',
-                            title=f'{recipient.last_name or "کاربر"} ({"@" + recipient.username if recipient.username else recipient.user_id})',
+                            title=f'ارسال نجوا به {recipient.last_name or "کاربر"} ({"@" + recipient.username if recipient.username else recipient.user_id})',
                             description=text,
-                            input_message_content=InputTextMessageContent(f'نجوا برای {recipient.last_name or "کاربر"}')
+                            input_message_content=InputTextMessageContent(f'در حال ارسال نجوا به {recipient.last_name or "کاربر"}...')
                         )
                     )
             elif len(parts) == 1:
@@ -353,6 +353,50 @@ async def inline_query(update: Update, context: CallbackContext) -> None:
     logger.info(f"Returning {len(results)} results for user {user_id}")
     await update.inline_query.answer(results, cache_time=0)
 
+# تابع مدیریت پیام‌های ریپلای‌شده
+async def handle_reply_message(update: Update, context: CallbackContext) -> None:
+    message = update.message
+    if message.reply_to_message and BOT_USERNAME in message.text:
+        user_id = update.effective_user.id
+        session = Session()
+        user = session.query(User).filter_by(user_id=user_id).first()
+
+        if not user or not user.started_bot or not user.is_member:
+            await message.reply_text("لطفا ربات را استارت کنید و عضو کانال اسپانسر شوید.")
+            session.close()
+            return
+
+        reply_user = message.reply_to_message.from_user
+        recipient = session.query(User).filter_by(user_id=reply_user.id).first()
+        if not recipient:
+            logger.info(f"Reply recipient {reply_user.id} not found, creating new recipient")
+            recipient = User(user_id=reply_user.id, username=reply_user.username,
+                            first_name=reply_user.first_name, last_name=reply_user.last_name,
+                            started_bot=False)
+            session.add(recipient)
+            session.commit()
+
+        text = message.text.replace(BOT_USERNAME, '').strip()
+        if text:
+            whisper = Whisper(sender_id=user_id, recipient_id=recipient.user_id, message_text=text)
+            session.add(whisper)
+            session.commit()
+            keyboard = [
+                [InlineKeyboardButton("ببینم 🤔", callback_data=f'see_{whisper.id}'),
+                 InlineKeyboardButton("پاسخ 💭", callback_data=f'reply_{whisper.id}')],
+                [InlineKeyboardButton("حذف 🤌🏼", callback_data=f'delete_{whisper.id}')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await message.reply_text(
+                text=f"{recipient.last_name or 'کاربر'}\n\nهنوز ندیده 😐\nتعداد فضول ها: 0",
+                reply_markup=reply_markup
+            )
+            logger.info(f"Whisper sent via reply by user {user_id} to {recipient.user_id}")
+        else:
+            await message.reply_text("لطفا متن نجوا را وارد کنید.")
+
+        session.close()
+
 # تابع مدیریت انتخاب گزینه Inline Query
 async def chosen_inline_result(update: Update, context: CallbackContext) -> None:
     result = update.chosen_inline_result
@@ -362,11 +406,14 @@ async def chosen_inline_result(update: Update, context: CallbackContext) -> None
     session = Session()
     sender = session.query(User).filter_by(user_id=user_id).first()
 
+    logger.info(f"Chosen inline result by user {user_id}: result_id={result.result_id}, query='{query}'")
+
     if sender and sender.is_member and sender.started_bot:
         if 'send_' in result.result_id:
             parts = query.split(' ', 1)
             if len(parts) != 2:
                 logger.error(f"Invalid query format in chosen_inline_result: {query}")
+                session.close()
                 return
             identifier, text = parts
             recipient = None
@@ -384,11 +431,21 @@ async def chosen_inline_result(update: Update, context: CallbackContext) -> None
                     [InlineKeyboardButton("حذف 🤌🏼", callback_data=f'delete_{whisper.id}')]
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
-                await context.bot.edit_message_text(
-                    inline_message_id=inline_message_id,
-                    text=f"{recipient.last_name or 'کاربر'}\n\nهنوز ندیده 😐\nتعداد فضول ها: 0",
-                    reply_markup=reply_markup
-                )
+                try:
+                    await context.bot.edit_message_text(
+                        inline_message_id=inline_message_id,
+                        text=f"{recipient.last_name or 'کاربر'}\n\nهنوز ندیده 😐\nتعداد فضول ها: 0",
+                        reply_markup=reply_markup
+                    )
+                    logger.info(f"Inline message edited successfully for whisper {whisper.id}")
+                except Exception as e:
+                    logger.error(f"Error editing inline message: {e}")
+                    await context.bot.send_message(
+                        chat_id=user_id,
+                        text=f"خطا در ارسال نجوا. لطفا دوباره تلاش کنید."
+                    )
+
+    session.close()
 
 # تابع مدیریت دکمه‌ها
 async def button(update: Update, context: CallbackContext) -> None:
@@ -428,11 +485,14 @@ async def button(update: Update, context: CallbackContext) -> None:
                 message_text = f"{recipient.last_name or 'کاربر'}\n\nاین نجوا توسط فرستنده، پاک شده 💤"
                 keyboard = [[InlineKeyboardButton("پاسخ 💭", callback_data=f'reply_{whisper.id}')]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
-            await context.bot.edit_message_text(
-                inline_message_id=whisper.inline_message_id,
-                text=message_text,
-                reply_markup=reply_markup
-            )
+            try:
+                await context.bot.edit_message_text(
+                    inline_message_id=whisper.inline_message_id,
+                    text=message_text,
+                    reply_markup=reply_markup
+                )
+            except Exception as e:
+                logger.error(f"Error editing inline message in button handler: {e}")
 
     elif data.startswith('reply_'):
         whisper_id = int(data.split('_')[1])
@@ -459,11 +519,14 @@ async def button(update: Update, context: CallbackContext) -> None:
             recipient = session.query(User).filter_by(user_id=whisper.recipient_id).first()
             keyboard = [[InlineKeyboardButton("پاسخ 💭", callback_data=f'reply_{whisper.id}')]]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await context.bot.edit_message_text(
-                inline_message_id=whisper.inline_message_id,
-                text=f"{recipient.last_name or 'کاربر'}\n\nاین نجوا توسط فرستنده، پاک شده 💤",
-                reply_markup=reply_markup
-            )
+            try:
+                await context.bot.edit_message_text(
+                    inline_message_id=whisper.inline_message_id,
+                    text=f"{recipient.last_name or 'کاربر'}\n\nاین نجوا توسط فرستنده، پاک شده 💤",
+                    reply_markup=reply_markup
+                )
+            except Exception as e:
+                logger.error(f"Error editing inline message in delete: {e}")
             await query.answer("نجوا حذف شد!", show_alert=True)
 
     session.close()
@@ -482,6 +545,7 @@ def main() -> None:
     application.add_handler(InlineQueryHandler(inline_query))
     application.add_handler(ChosenInlineResultHandler(chosen_inline_result))
     application.add_handler(CallbackQueryHandler(button, pattern='^(see_|reply_|delete_)'))
+    application.add_handler(MessageHandler(Filters.text & Filters.reply & Filters.regex(BOT_USERNAME), handle_reply_message))
 
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
