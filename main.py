@@ -86,7 +86,7 @@ async def start(update: Update, context: CallbackContext) -> None:
     message = await context.bot.send_message(chat_id=user.id, text=welcome_text, reply_markup=reply_markup)
     context.user_data['welcome_message_id'] = message.message_id  # ذخیره message_id
 
-# توابع راهنمای جزئی با لاگ
+# توابع راهنمای جزئی با لاگ و ویرایش پیام
 async def guide_username_callback(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     logger.info(f"Guide username callback triggered by user {query.from_user.id}")
@@ -95,12 +95,16 @@ async def guide_username_callback(update: Update, context: CallbackContext) -> N
     keyboard = [[InlineKeyboardButton("بازگشت", callback_data='back_to_menu')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     message_id = context.user_data.get('welcome_message_id')
-    await context.bot.edit_message_text(
-        chat_id=query.from_user.id,
-        message_id=message_id,
-        text=text,
-        reply_markup=reply_markup
-    )
+    try:
+        await context.bot.edit_message_text(
+            chat_id=query.from_user.id,
+            message_id=message_id,
+            text=text,
+            reply_markup=reply_markup
+        )
+    except Exception as e:
+        logger.error(f"Error editing message: {e}")
+        await context.bot.send_message(chat_id=query.from_user.id, text=text, reply_markup=reply_markup)
 
 async def guide_userid_callback(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
@@ -110,12 +114,16 @@ async def guide_userid_callback(update: Update, context: CallbackContext) -> Non
     keyboard = [[InlineKeyboardButton("بازگشت", callback_data='back_to_menu')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     message_id = context.user_data.get('welcome_message_id')
-    await context.bot.edit_message_text(
-        chat_id=query.from_user.id,
-        message_id=message_id,
-        text=text,
-        reply_markup=reply_markup
-    )
+    try:
+        await context.bot.edit_message_text(
+            chat_id=query.from_user.id,
+            message_id=message_id,
+            text=text,
+            reply_markup=reply_markup
+        )
+    except Exception as e:
+        logger.error(f"Error editing message: {e}")
+        await context.bot.send_message(chat_id=query.from_user.id, text=text, reply_markup=reply_markup)
 
 async def guide_reply_callback(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
@@ -125,12 +133,16 @@ async def guide_reply_callback(update: Update, context: CallbackContext) -> None
     keyboard = [[InlineKeyboardButton("بازگشت", callback_data='back_to_menu')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     message_id = context.user_data.get('welcome_message_id')
-    await context.bot.edit_message_text(
-        chat_id=query.from_user.id,
-        message_id=message_id,
-        text=text,
-        reply_markup=reply_markup
-    )
+    try:
+        await context.bot.edit_message_text(
+            chat_id=query.from_user.id,
+            message_id=message_id,
+            text=text,
+            reply_markup=reply_markup
+        )
+    except Exception as e:
+        logger.error(f"Error editing message: {e}")
+        await context.bot.send_message(chat_id=query.from_user.id, text=text, reply_markup=reply_markup)
 
 async def guide_history_callback(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
@@ -140,12 +152,16 @@ async def guide_history_callback(update: Update, context: CallbackContext) -> No
     keyboard = [[InlineKeyboardButton("بازگشت", callback_data='back_to_menu')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     message_id = context.user_data.get('welcome_message_id')
-    await context.bot.edit_message_text(
-        chat_id=query.from_user.id,
-        message_id=message_id,
-        text=text,
-        reply_markup=reply_markup
-    )
+    try:
+        await context.bot.edit_message_text(
+            chat_id=query.from_user.id,
+            message_id=message_id,
+            text=text,
+            reply_markup=reply_markup
+        )
+    except Exception as e:
+        logger.error(f"Error editing message: {e}")
+        await context.bot.send_message(chat_id=query.from_user.id, text=text, reply_markup=reply_markup)
 
 # تابع بازگشت به منوی اصلی
 async def back_to_menu_callback(update: Update, context: CallbackContext) -> None:
@@ -161,12 +177,16 @@ async def back_to_menu_callback(update: Update, context: CallbackContext) -> Non
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     message_id = context.user_data.get('welcome_message_id')
-    await context.bot.edit_message_text(
-        chat_id=query.from_user.id,
-        message_id=message_id,
-        text=welcome_text,
-        reply_markup=reply_markup
-    )
+    try:
+        await context.bot.edit_message_text(
+            chat_id=query.from_user.id,
+            message_id=message_id,
+            text=welcome_text,
+            reply_markup=reply_markup
+        )
+    except Exception as e:
+        logger.error(f"Error editing message: {e}")
+        await context.bot.send_message(chat_id=query.from_user.id, text=welcome_text, reply_markup=reply_markup)
 
 # تابع مدیریت عضویت در کانال
 async def chat_member_update(update: Update, context: CallbackContext) -> None:
@@ -258,23 +278,22 @@ async def inline_query(update: Update, context: CallbackContext) -> None:
                     results.append(
                         InlineQueryResultArticle(
                             id=f'recipient_{recipient.user_id}',
-                            title=f'{recipient.last_name} ({identifier})',
+                            title=f'{recipient.last_name or "کاربر"} ({identifier})',
                             input_message_content=InputTextMessageContent(f'{BOT_USERNAME} {identifier} ')
                         )
                     )
         else:
-            logger.info(f"Query parts for user {user_id}: {parts}")
             parts = query.split(' ', 1)
+            logger.info(f"Query parts for user {user_id}: {parts}")
             if len(parts) == 2:
                 identifier, text = parts
                 recipient = None
                 if identifier.startswith('@'):
                     username = identifier[1:]
                     recipient = session.query(User).filter_by(username=username).first()
-                    # ثبت خودکار گیرنده اگر وجود ندارد
                     if not recipient:
                         logger.info(f"Recipient {username} not found, creating new recipient")
-                        recipient = User(user_id=username, username=username, started_bot=False)
+                        recipient = User(user_id=hash(username), username=username, started_bot=False)
                         session.add(recipient)
                         session.commit()
                 elif identifier.isdigit():
@@ -302,7 +321,7 @@ async def inline_query(update: Update, context: CallbackContext) -> None:
                         InlineQueryResultArticle(
                             id='write_text',
                             title='حالا متن نجوا رو بنویس 💡',
-                            description='مثال: سلام چطور؟',
+                            description='مثال: سلام چطوری؟',
                             input_message_content=InputTextMessageContent('لطفا متن نجوا را وارد کنید.')
                         )
                     )
@@ -322,7 +341,7 @@ async def inline_query(update: Update, context: CallbackContext) -> None:
                             id=f'send_reply_{recipient.user_id}',
                             title=f'{recipient.last_name or "کاربر"} ({"@" + recipient.username if recipient.username else recipient.user_id})',
                             description=query,
-                            input_message_content=InputTextMessageContent(f'نجو برای {recipient.last_name or "کاربر"}')
+                            input_message_content=InputTextMessageContent(f'نجوا برای {recipient.last_name or "کاربر"}')
                         )
                     )
 
@@ -403,7 +422,7 @@ async def button(update: Update, context: CallbackContext) -> None:
                 reply_markup = InlineKeyboardMarkup(keyboard)
             else:
                 message_text = f"{recipient.last_name or 'کاربر'}\n\nاین نجوا توسط فرستنده، پاک شده 💤"
-                keyboard = [[InlineKeyboardButton("پاسخ 💭", callback_data=f'reply_{whisper.id}')]
+                keyboard = [[InlineKeyboardButton("پاسخ 💭", callback_data=f'reply_{whisper.id}')]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
             await context.bot.edit_message_text(
                 inline_message_id=whisper.inline_message_id,
@@ -434,7 +453,7 @@ async def button(update: Update, context: CallbackContext) -> None:
             whisper.is_deleted = True
             session.commit()
             recipient = session.query(User).filter_by(user_id=whisper.recipient_id).first()
-            keyboard = [[InlineKeyboardButton("پاسخ 💭", callback_data=f'reply_{whisper.id}')]
+            keyboard = [[InlineKeyboardButton("پاسخ 💭", callback_data=f'reply_{whisper.id}')]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await context.bot.edit_message_text(
                 inline_message_id=whisper.inline_message_id,
