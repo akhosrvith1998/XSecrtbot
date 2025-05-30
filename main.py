@@ -401,7 +401,7 @@ async def handle_reply_message(update: Update, context: CallbackContext) -> None
             session.commit()
             keyboard = [
                 [InlineKeyboardButton("ببینم 🤔", callback_data=f'see_{whisper.id}'),
-                 InlineKeyboardButton("پاسخ 💪", callback_data=f'reply_{whisper.id}')),
+                 InlineKeyboardButton("پاسخ 💪", callback_data=f'reply_{whisper.id}'),
                 [InlineKeyboardButton("حذف 🤖", callback_data=f'delete_{whisper.id}')]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
