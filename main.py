@@ -57,28 +57,33 @@ async def start(update: Update, context: CallbackContext) -> None:
     else:
         db_user.started_bot = True
     session.commit()
+
+    # بررسی وضعیت عضویت در کانال
+    try:
+        member = await context.bot.get_chat_member(chat_id=SPONSOR_CHANNEL, user_id=user.id)
+        if member.status in ['member', 'administrator', 'creator']:
+            db_user.is_member = True
+            await context.bot.send_message(chat_id=user.id, text="عضویتت هم تایید شد. ✅")
+        else:
+            db_user.is_member = False
+            await context.bot.send_message(chat_id=user.id, text="لطفا عضو کانال اسپانسر شوید.")
+    except Exception as e:
+        logger.error(f"Error checking membership: {e}")
+        await context.bot.send_message(chat_id=user.id, text="خطا در بررسی عضویت. لطفا بعدا تلاش کنید.")
+
+    session.commit()
     session.close()
 
     welcome_text = f"سلام {user.last_name} خوش آمدی 💭\n\nبا من میتونی پیام هاتو توی گروه، بصورت مخفیانه بفرستی برای گیرنده مدنظرت تا فقط تو و اون بتونید پیام رو بخونید!\n\nدر چهار حالت میتونی از من استفاده کنی:"
     keyboard = [
-        [InlineKeyboardButton("راهنما 💡", callback_data='guide')],
+        [InlineKeyboardButton("نجوا یوزرنیم", callback_data='guide_username'),
+         InlineKeyboardButton("نجوا عددی", callback_data='guide_userid')],
+        [InlineKeyboardButton("نجوا ریپلای", callback_data='guide_reply'),
+         InlineKeyboardButton("نجوا تاریخچه", callback_data='guide_history')],
         [InlineKeyboardButton("عضویت در کانال اسپانسر", url=f'https://t.me/{SPONSOR_CHANNEL[1:]}')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await context.bot.send_message(chat_id=user.id, text=welcome_text, reply_markup=reply_markup)
-
-# تابع راهنما
-async def guide_callback(update: Update, context: CallbackContext) -> None:
-    query = update.callback_query
-    await query.answer()
-    keyboard = [
-        [InlineKeyboardButton("نجوا یوزرنیم", callback_data='guide_username')],
-        [InlineKeyboardButton("نجوا عددی", callback_data='guide_userid')],
-        [InlineKeyboardButton("نجوا ریپلای", callback_data='guide_reply')],
-        [InlineKeyboardButton("نجوا تاریخچه", callback_data='guide_history')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await context.bot.send_message(chat_id=query.from_user.id, text="راهنمای استفاده از ربات:", reply_markup=reply_markup)
 
 # توابع راهنمای جزئی
 async def guide_username_callback(update: Update, context: CallbackContext) -> None:
@@ -350,7 +355,6 @@ def main() -> None:
     application = Application.builder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(guide_callback, pattern='guide'))
     application.add_handler(CallbackQueryHandler(guide_username_callback, pattern='guide_username'))
     application.add_handler(CallbackQueryHandler(guide_userid_callback, pattern='guide_userid'))
     application.add_handler(CallbackQueryHandler(guide_reply_callback, pattern='guide_reply'))
