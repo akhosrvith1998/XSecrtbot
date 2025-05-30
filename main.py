@@ -46,7 +46,7 @@ SPONSOR_CHANNEL = '@XSecrtyou'
 BOT_USERNAME = '@XSecrtbot'
 
 # تابع خوش‌آمدگویی با استارت
-async def start(update: Update, context: CallbackContext) -> None:
+async def start(update: Update, context) -> None:
     user = update.effective_user
     session = Session()
     db_user = session.query(User).filter_by(user_id=user.id).first()
@@ -89,7 +89,7 @@ async def start(update: Update, context: CallbackContext) -> None:
     context.user_data['welcome_message_id'] = message.message_id  # ذخیره message_id
 
 # توابع راهنمای جزئی با لاگ و ویرایش پیام
-async def guide_username_callback(update: Update, context: CallbackContext) -> None:
+async def guide_username_callback(update: Update, context) -> None:
     query = update.callback_query
     logger.info(f"Guide username callback triggered by user {query.from_user.id}")
     await query.answer()
@@ -108,7 +108,7 @@ async def guide_username_callback(update: Update, context: CallbackContext) -> N
         logger.error(f"Error editing message: {e}")
         await context.bot.send_message(chat_id=query.from_user.id, text=text, reply_markup=reply_markup)
 
-async def guide_userid_callback(update: Update, context: CallbackContext) -> None:
+async def guide_userid_callback(update: Update, context) -> None:
     query = update.callback_query
     logger.info(f"Guide userid callback triggered by user {query.from_user.id}")
     await query.answer()
@@ -127,7 +127,7 @@ async def guide_userid_callback(update: Update, context: CallbackContext) -> Non
         logger.error(f"Error editing message: {e}")
         await context.bot.send_message(chat_id=query.from_user.id, text=text, reply_markup=reply_markup)
 
-async def guide_reply_callback(update: Update, context: CallbackContext) -> None:
+async def guide_reply_callback(update: Update, context) -> None:
     query = update.callback_query
     logger.info(f"Guide reply callback triggered by user {query.from_user.id}")
     await query.answer()
@@ -146,7 +146,7 @@ async def guide_reply_callback(update: Update, context: CallbackContext) -> None
         logger.error(f"Error editing message: {e}")
         await context.bot.send_message(chat_id=query.from_user.id, text=text, reply_markup=reply_markup)
 
-async def guide_history_callback(update: Update, context: CallbackContext) -> None:
+async def guide_history_callback(update: Update, context) -> None:
     query = update.callback_query
     logger.info(f"Guide history callback triggered by user {query.from_user.id}")
     await query.answer()
@@ -166,7 +166,7 @@ async def guide_history_callback(update: Update, context: CallbackContext) -> No
         await context.bot.send_message(chat_id=query.from_user.id, text=text, reply_markup=reply_markup)
 
 # تابع بازگشت به منوی اصلی
-async def back_to_menu_callback(update: Update, context: CallbackContext) -> None:
+async def back_to_menu_callback(update: Update, context) -> None:
     query = update.callback_query
     await query.answer()
     display_name = query.from_user.last_name or query.from_user.first_name or "کاربر"
@@ -203,7 +203,7 @@ async def back_to_menu_callback(update: Update, context: CallbackContext) -> Non
         )
 
 # تابع مدیریت عضویت در کانال
-async def chat_member_update(update: Update, context: CallbackContext) -> None:
+async def chat_member_update(update: Update, context) -> None:
     chat_member = update.chat_member
     if chat_member.chat.username == SPONSOR_CHANNEL[1:]:
         user_id = chat_member.user.id
@@ -257,7 +257,7 @@ def get_previous_recipients(user_id):
     return recipients
 
 # تابع مدیریت Inline Query
-async def inline_query(update: Update, context: CallbackContext) -> None:
+async def inline_query(update: Update, context) -> None:
     query = update.inline_query.query.strip()
     user_id = update.inline_query.from_user.id
     session = Session()
@@ -369,7 +369,7 @@ async def inline_query(update: Update, context: CallbackContext) -> None:
         session.close()
 
 # تابع مدیریت پیام‌های ریپلای‌شده
-async def handle_reply_message(update: Update, context: CallbackContext) -> None:
+async def handle_reply_message(update: Update, context) -> None:
     message = update.message
     if message.reply_to_message and isinstance(message.text, str) and BOT_USERNAME in message.text:
         user_id = update.effective_user.id
@@ -420,7 +420,7 @@ async def handle_reply_message(update: Update, context: CallbackContext) -> None
             session.close()
 
 # تابع مدیریت انتخاب گزینه Inline
-async def chosen_inline_result(update: Update, context: CallbackContext) -> None:
+async def chosen_inline_result(update: Update, context) -> None:
     result = update.chosen_inline_result
     user_id = result.from_user.id
     inline_message_id = result.inline_message_id
@@ -466,7 +466,7 @@ async def chosen_inline_result(update: Update, context: CallbackContext) -> None
         session.close()
 
 # تابع مدیریت دکمه‌ها
-async def button_handler(update: Update, context: CallbackContext) -> None:
+async def button_handler(update: Update, context) -> None:
     query = update.callback_query
     user_id = query.from_user.id
     data = query.data
