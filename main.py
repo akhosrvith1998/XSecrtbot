@@ -85,27 +85,31 @@ async def start(update: Update, context: CallbackContext) -> None:
     reply_markup = InlineKeyboardMarkup(keyboard)
     await context.bot.send_message(chat_id=user.id, text=welcome_text, reply_markup=reply_markup)
 
-# توابع راهنمای جزئی
+# توابع راهنمای جزئی با لاگ
 async def guide_username_callback(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
+    logger.info(f"Guide username callback triggered by user {query.from_user.id}")
     await query.answer()
     text = "حالت اول، من رو تایپ کن، یوزرنیم گیرنده رو تایپ کن، متن نجوات رو بنویس.\n\nمثال:\n@XSecrtbot @username سلام چطوری؟ 😈\n\nضمنا یادت نره، در هر چهار حالت، بعد از اتمام تایپ متن نجوات، باید روی گزینه ارسال نجوا، کلیک کنی تا نجوات ساخته و ارسال بشه."
     await context.bot.send_message(chat_id=query.from_user.id, text=text)
 
 async def guide_userid_callback(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
+    logger.info(f"Guide userid callback triggered by user {query.from_user.id}")
     await query.answer()
     text = "حالت دوم، من رو تایپ کن، آیدی عددی گیرنده رو تایپ کن، متن نجوات رو بنویس.\n\nمثال:\n@XSecrtbot 1234567890 سلام چطوری؟ 😈\n\nضمنا یادت نره، در هر چهار حالت، بعد از اتمام تایپ متن نجوات، باید روی گزینه ارسال نجوا، کلیک کنی تا نجوات ساخته و ارسال بشه."
     await context.bot.send_message(chat_id=query.from_user.id, text=text)
 
 async def guide_reply_callback(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
+    logger.info(f"Guide reply callback triggered by user {query.from_user.id}")
     await query.answer()
     text = "حالت سوم، من رو تایپ کن، روی یکی از پیام های گیرنده ریپلای کن، متن نجوات رو بنویس.\n\nمثال:\n@XSecrtbot سلام چطوری؟ 😈\n\nضمنا یادت نره، در هر چهار حالت، بعد از اتمام تایپ متن نجوات، باید روی گزینه ارسال نجوا، کلیک کنی تا نجوات ساخته و ارسال بشه."
     await context.bot.send_message(chat_id=query.from_user.id, text=text)
 
 async def guide_history_callback(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
+    logger.info(f"Guide history callback triggered by user {query.from_user.id}")
     await query.answer()
     text = "حالت چهارم، اگر قبلا از طریق من به گیرنده مدنظرت نجوا دادی، وقتی من رو تایپ کنی، گزینه ارسال نجوا به اون کاربر بالای صفحه کیبوردت نشون داده میشه، درنتیجه بعد از تایپ یوزرنیم من، فقط کافیه متن نجوات رو بنویسی.\n\nضمنا یادت نره، در هر چهار حالت، بعد از اتمام تایپ متن نجوات، باید روی گزینه ارسال نجوا، کلیک کنی تا نجوات ساخته و ارسال بشه."
     await context.bot.send_message(chat_id=query.from_user.id, text=text)
@@ -362,7 +366,7 @@ def main() -> None:
     application.add_handler(ChatMemberHandler(chat_member_update))
     application.add_handler(InlineQueryHandler(inline_query))
     application.add_handler(ChosenInlineResultHandler(chosen_inline_result))
-    application.add_handler(CallbackQueryHandler(button))
+    application.add_handler(CallbackQueryHandler(button, pattern='^(see_|reply_|delete_)'))
 
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
