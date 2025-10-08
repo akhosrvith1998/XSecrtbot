@@ -1,5 +1,2 @@
-python-telegram-bot
-flask
-asgiref
-pytz
-sqlalchemy
+requests
+Flask
