@@ -1,363 +1,307 @@
-import logging
-from telegram import (
-    InlineKeyboardButton, InlineKeyboardMarkup, InlineQueryResultArticle,
-    InputTextMessageContent, Update, InlineQueryResultCachedPhoto
-)
-from telegram.ext import (
-    Application, CommandHandler, CallbackQueryHandler,
-    InlineQueryHandler, ContextTypes, MessageHandler, filters
-)
-from datetime import datetime
-import pytz
-import asyncio
+import requests, time, json, os, hashlib, logging, traceback
+from threading import Thread
+from flask import Flask
 
-# تنظیمات اولیه
-TOKEN = "7682323067:AAFcmkRvUZBQZJVQgCKgPqkaQb0TE2TPBPo"
-BOT_USERNAME = "@XSecrtbot"
-CHANNEL_ID = "@XSecrtyou"
-ADMIN_ID = 1234567890  # جایگزین با ID ادمین
-TIMEZONE = pytz.timezone("Asia/Tehran")
+BOT_TOKEN = "8416509515:AAEUSEFSOFdq8A0PmNOyn9-GVGjq-UnArUQ"
+API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
+DATA_FILE = "data.json"
+POLL_TIMEOUT = 20
 
-# پایگاه داده موقت (در حافظه)
-user_data = {}  # {user_id: {history: [], ...}}
-messages = {}  # {message_id: {sender: id, receiver: id, text: str, ...}}
+logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
 
-# تنظیب لاگ‌گیری
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-
-# توابع کمکی
-def persian_time():
-    return datetime.now(TIMEZONE).strftime("%H:%M")
-
-def get_user_key(user):
-    return f"{user.id}_{user.username or 'no_username'}"
-
-async def check_membership(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id):
+def load_data():
+    if not os.path.exists(DATA_FILE):
+        return {"users": {}}
     try:
-        member = await context.bot.get_chat_member(CHANNEL_ID, user_id)
-        return member.status in ['member', 'administrator', 'creator']
-    except Exception as e:
-        logging.error(f"Error checking membership: {e}")
-        return False
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        logging.error("load error")
+        traceback.print_exc()
+        return {"users": {}}
 
-# دستور استارت
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    chat_id = update.effective_chat.id
-    
-    if not await check_membership(update, context, user.id):
-        keyboard = [[
-            InlineKeyboardButton("عضویت در کانال", url=f"https://t.me/{CHANNEL_ID[1:]}"),
-        ]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(
-            f"سلام {user.last_name or user.first_name}! لطفاً ابتدا در کانال ما عضو شوید:",
-            reply_markup=reply_markup
-        )
-        return
+def save_data(data):
+    try:
+        with open(DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        logging.error("save error")
+        traceback.print_exc()
 
-    keyboard = [[
-        InlineKeyboardButton("راهنما💡", callback_data="help"),
-        InlineKeyboardButton("عضویت در کانال", url=f"https://t.me/{CHANNEL_ID[1:]}")
-    ]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await update.message.reply_text(
-        f"سلام {user.last_name or user.first_name}! خوش آمدید 💭\n\n"
-        "با من میتونی پیام هاتو توی گروه، بصورت مخفیانه بفرستی برای گیرنده مدنظرت...",
-        reply_markup=reply_markup
-    )
-
-# منوی راهنما
-async def help_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    help_text = (
-        "در چهار حالت میتونی از من استفاده کنی:\n\n"
-        "1️⃣ نجوا یوزرنیم:\n"
-        "من رو تایپ کن، یوزرنیم گیرنده رو تایپ کن، متن نجوات رو بنویس.\n"
-        "مثال: @XSecrtbot @username سلام چطوری؟ 😈\n\n"
-        "2️⃣ نجوا عددی:\n"
-        "من رو تایپ کن، آیدی عددی گیرنده رو تایپ کن، متن نجوات رو بنویس.\n"
-        "مثال: @XSecrtbot 1234567890 سلام چطوری؟ 😈\n\n"
-        "3️⃣ نجوا ریپلای:\n"
-        "من رو تایپ کن، روی یکی از پیام های گیرنده ریپلای کن، متن نجوات رو بنویس.\n"
-        "مثال: @XSecrtbot سلام چطوری؟ 😈\n\n"
-        "4️⃣ نجوا تاریخچه:\n"
-        "اگر قبلا به گیرنده مدنظرت نجوا دادی، وقتی من رو تایپ کنی، گزینه ارسال نجوا به اون کاربر بالای صفحه کیبوردت نشون داده میشه.\n\n"
-        "⚠️ در هر حالت، بعد از اتمام تایپ متن نجوات، روی گزینه ارسال نجوا کلیک کن تا نجوات ساخته و ارسال بشه."
-    )
-    
-    keyboard = [[
-        InlineKeyboardButton("« بازگشت", callback_data="back_to_main")
-    ]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(
-        help_text,
-        reply_markup=reply_markup
-    )
-
-# هندلر اینلاین کوئری
-async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.inline_query.query
-    user_id = update.effective_user.id
-    
-    # بررسی عضویت در کانال
-    if not await check_membership(update, context, user_id):
-        results = [InlineQueryResultArticle(
-            id="need_join",
-            title="لطفا قبل از شروع عضو شوید",
-            input_message_content=InputTextMessageContent(
-                "لطفا قبل از شروع روی این پیام کلیک کن🤌🏼"
-            ),
-            description="عضویت در کانال مورد نیاز است",
-            thumb_url="https://telegram.org/img/favicon.ico"
-        )]
-        await update.inline_query.answer(results)
-        return
-
-    # پردازش تاریخچه گیرندگان
-    user_history = user_data.get(user_id, {}).get("history", [])
-    
-    results = []
-    
-    # گزینه اول: وارد کردن یوزرنیم/آیدی
-    results.append(InlineQueryResultArticle(
-        id="enter_username",
-        title="یوزرنیم یا آیدی عددی رو وارد کن 💡",
-        input_message_content=InputTextMessageContent(
-            "لطفاً یوزرنیم یا آیدی عددی گیرنده رو وارد کنید"
-        ),
-        description="وارد کردن یوزرنیم یا آیدی عددی گیرنده"
-    ))
-    
-    # گزینه دوم: ریپلای بر روی پیام
-    results.append(InlineQueryResultArticle(
-        id="reply_to_message",
-        title="روی پیام کاربر ریپلای کن 💡",
-        input_message_content=InputTextMessageContent(
-            "لطفاً روی یکی از پیام های گیرنده ریپلای کنید"
-        ),
-        description="استخراج اطلاعات از طریق ریپلای"
-    ))
-    
-    # گزینه سوم و بعدی: تاریخچه گیرندگان
-    for i, (receiver_id, last_name) in enumerate(user_history[:10]):
-        if i >= 8:  # حداکثر 8 گزینه تاریخچه
-            break
-        results.append(InlineQueryResultArticle(
-            id=f"history_{i}",
-            title=f"{last_name} ({receiver_id})",
-            input_message_content=InputTextMessageContent(
-                f"@XSecrtbot {receiver_id} "
-            ),
-            description=f"ارسال نجوا به {last_name}"
-        ))
-    
-    await update.inline_query.answer(results)
-
-# هندلر پیام
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # پردازش پیام‌های معمولی
-    if update.message.text.startswith(BOT_USERNAME):
-        # پردازش فرمت‌های ارسال نجوا
-        parts = update.message.text.split()
-        if len(parts) < 3:
-            await update.message.reply_text("فرمت اشتباه! لطفاً دستور العمل‌ها را دوباره بخوانید.")
-            return
-            
-        # تشخیص نوع فرمت
-        target = parts[1]
-        message_text = " ".join(parts[2:])
-        
-        # تشخیص گیرنده
-        if target.startswith('@'):
-            # فرمت یوزرنیم
-            receiver_id = await get_user_id_by_username(target)
-        elif target.isdigit():
-            # فرمت عددی
-            receiver_id = int(target)
-        else:
-            await update.message.reply_text("فرمت اشتباه! لطفاً یوزرنیم یا آیدی عددی را به درستی وارد کنید.")
-            return
-            
-        if not receiver_id:
-            await update.message.reply_text("کاربر مورد نظر پیدا نشد!")
-            return
-            
-        # ذخیره تاریخچه
-        user_key = get_user_key(update.effective_user)
-        if user_key not in user_data:
-            user_data[user_key] = {"history": []}
-            
-        # اضافه کردن به تاریخچه
-        if (receiver_id, update.effective_user.last_name) not in user_data[user_key]["history"]:
-            user_data[user_key]["history"].insert(0, (receiver_id, update.effective_user.last_name))
-            # حداکثر 10 مورد را نگه دارید
-            user_data[user_key]["history"] = user_data[user_key]["history"][:10]
-        
-        # ارسال پیام اینلاین
-        message_id = f"{update.effective_user.id}_{receiver_id}_{len(messages)+1}"
-        messages[message_id] = {
-            "sender": update.effective_user.id,
-            "receiver": receiver_id,
-            "text": message_text,
-            "sent_time": persian_time(),
-            "views": [],
-            "snoops": []
+def ensure_user(data, user_id):
+    users = data.setdefault("users", {})
+    if str(user_id) not in users:
+        users[str(user_id)] = {
+            "activated": False,
+            "mode": None,
+            "buffer": [],
+            "files": {},
         }
-        
-        # ایجاد دکمه‌ها
-        keyboard = [
-            [InlineKeyboardButton("ببینم 🤔", callback_data=f"view_{message_id}"),
-             InlineKeyboardButton("پاسخ 💭", callback_data=f"reply_{message_id}")],
-            [InlineKeyboardButton("حذف 🤌🏼", callback_data=f"delete_{message_id}")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        # ارسال پیام به گیرنده
-        try:
-            await context.bot.send_message(
-                chat_id=receiver_id,
-                text=f"نام شما: {update.effective_user.last_name}\n"
-                     f"هنوز ندیده 😐\n"
-                     f"تعداد فضول ها: 0",
-                reply_markup=reply_markup
-            )
-            await update.message.reply_text("نجوا با موفقیت ارسال شد!")
-        except Exception as e:
-            await update.message.reply_text("متاسفانه نمی‌تونم نجوا رو ارسال کنم.")
+    return users[str(user_id)]
 
-# هندلر کلیک روی دکمه‌ها
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    data = query.data.split('_')
-    action = data[0]
-    message_id = '_'.join(data[1:])
-    
-    if message_id not in messages:
-        await query.edit_message_text("این نجوا دیگه وجود نداره!")
-        return
-    
-    msg_data = messages[message_id]
-    user_id = query.from_user.id
-    
-    if action == "view":
-        if user_id == msg_data["receiver"]:
-            # مشاهده نجوا توسط گیرنده
-            msg_data["views"].append({
-                "user": user_id,
-                "time": persian_time()
-            })
-            
-            # به‌روزرسانی متن نجوا
-            view_count = len(msg_data["views"])
-            snooper_count = len(msg_data["snoops"])
-            
-            new_text = f"{query.from_user.last_name}\n"
-            new_text += f"نجوا رو {view_count} بار دیده 😈 {msg_data['views'][0]['time']}\n"
-            new_text += f"تعداد فضول ها: {snooper_count}"
-            
-            await query.edit_message_text(
-                new_text,
-                reply_markup=query.message.reply_markup
-            )
-            
-            # نمایش متن نجوا در پاپ‌آپ
-            await query.answer(
-                text=f"نویسنده: {msg_data['sender']}\n"
-                     f"متن نجوا: {msg_data['text']}"
-            )
-        else:
-            # تلاش غیرمجاز برای مشاهده
-            msg_data["snoops"].append({
-                "user": user_id,
-                "time": persian_time()
-            })
-            await query.answer("شما اجازه مشاهده این نجوا رو ندارید!", show_alert=True)
-    
-    elif action == "delete":
-        if user_id == msg_data["sender"]:
-            # حذف نجوا
-            new_text = f"{query.from_user.last_name}\n"
-            new_text += "این نجوا توسط فرستنده، پاک شده 💤"
-            
-            # تغییر دکمه‌ها
-            keyboard = [[
-                InlineKeyboardButton("پاسخ 💭", callback_data=f"reply_{message_id}")
-            ]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await query.edit_message_text(
-                new_text,
-                reply_markup=reply_markup
-            )
-        else:
-            await query.answer("فقط فرستنده می‌تونه نجوا رو حذف کنه!", show_alert=True)
-    
-    elif action == "reply":
-        # پاسخ به نجوا
-        if user_id == msg_data["receiver"]:
-            # فعال کردن حالت پاسخ
-            context.user_data["reply_to"] = msg_data["sender"]
-            await query.message.reply_text("لطفاً متن پاسخ خود را بنویسید:")
-        else:
-            await query.answer("فقط گیرنده می‌تونه پاسخ بده!", show_alert=True)
+def make_file_key(filename):
+    return hashlib.sha1(filename.encode("utf-8")).hexdigest()[:10]
 
-# هندلر عضویت در کانال
-async def channel_member_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_member = update.my_chat_member
-    user_id = chat_member.from_user.id
-    
-    if chat_member.new_chat_member.status == 'left':
-        # کاربر از کانال خارج شده
+def build_panel_markup():
+    return {"inline_keyboard":[[
+        {"text":"ثبت محتوا","callback_data":"panel_register"},
+        {"text":"مشاهده فایل ها","callback_data":"panel_list"},
+        {"text":"حذف فایل","callback_data":"panel_delete"},
+    ]]}
+
+def build_nav_markup(file_key, index, total):
+    prev_index = max(index-1,0)
+    next_index = min(index+1,total-1)
+    return {"inline_keyboard":[[
+        {"text":"قبلی","callback_data":f"view|{file_key}|{prev_index}"},
+        {"text":"بعدی","callback_data":f"view|{file_key}|{next_index}"},
+    ]]}
+
+def telegram_request(method, payload=None, files=None):
+    url = f"{API_URL}/{method}"
+    try:
+        if files:
+            r = requests.post(url,data=payload,files=files,timeout=30)
+        else:
+            r = requests.post(url,json=payload,timeout=30)
+        return r.json()
+    except Exception:
+        logging.error("telegram request error")
+        traceback.print_exc()
+        return None
+
+def send_message(chat_id,text,reply_markup=None):
+    payload={"chat_id":chat_id,"text":text}
+    if reply_markup is not None:
+        payload["reply_markup"]=reply_markup
+    return telegram_request("sendMessage",payload)
+
+def send_media(chat_id,item,reply_markup=None):
+    t=item.get("type")
+    payload={"chat_id":chat_id}
+    if reply_markup is not None:
+        payload["reply_markup"]=reply_markup
+    if t=="photo":
+        payload["photo"]=item["file_id"]
+        return telegram_request("sendPhoto",payload)
+    if t=="video":
+        payload["video"]=item["file_id"]
+        return telegram_request("sendVideo",payload)
+    if t=="document":
+        payload["document"]=item["file_id"]
+        return telegram_request("sendDocument",payload)
+    if t=="audio":
+        payload["audio"]=item["file_id"]
+        return telegram_request("sendAudio",payload)
+    payload["document"]=item["file_id"]
+    return telegram_request("sendDocument",payload)
+
+def edit_message_media(chat_id,message_id,item,reply_markup=None):
+    media={"type":item["type"],"media":item["file_id"]}
+    payload={"chat_id":chat_id,"message_id":message_id,"media":media}
+    if reply_markup is not None:
+        payload["reply_markup"]=reply_markup
+    return telegram_request("editMessageMedia",payload)
+
+def answer_callback(callback_query_id):
+    return telegram_request("answerCallbackQuery",{"callback_query_id":callback_query_id})
+
+def handle_update(update,data):
+    try:
+        if "message" in update:
+            msg=update["message"]
+            user=msg.get("from") or {}
+            user_id=user.get("id")
+            if user_id is None:
+                return
+            chat_id=msg["chat"]["id"]
+            u=ensure_user(data,user_id)
+            text=msg.get("text")
+            if text is not None and text.strip()=="88077413Cph4W":
+                u["activated"]=True
+                u["mode"]=None
+                u["buffer"]=[]
+                save_data(data)
+                send_message(chat_id,"ربات فعال شد. برای دیدن پنل بنویس: پنل")
+                return
+            if not u.get("activated"):
+                return
+            if u.get("mode")=="awaiting_filename" and text:
+                filename=text.strip()
+                if not u.get("buffer"):
+                    send_message(chat_id,"هیچ محتوایی برای ذخیره در بافر وجود ندارد.")
+                    u["mode"]=None
+                    u["buffer"]=[]
+                    save_data(data)
+                    return
+                key=make_file_key(filename)
+                u["files"][key]={"name":filename,"items":u["buffer"][:]}
+                u["buffer"]=[]
+                u["mode"]=None
+                save_data(data)
+                send_message(chat_id,f'فایل "{filename}" ذخیره شد.')
+                return
+            if u.get("mode")=="awaiting_delete" and text:
+                filename=text.strip()
+                found_key=None
+                for k,v in u["files"].items():
+                    if v.get("name")==filename:
+                        found_key=k
+                        break
+                if not found_key:
+                    send_message(chat_id,f'فایل "{filename}" پیدا نشد.')
+                else:
+                    del u["files"][found_key]
+                    save_data(data)
+                    send_message(chat_id,f'فایل "{filename}" حذف شد.')
+                u["mode"]=None
+                return
+            if u.get("mode")=="collecting":
+                if "photo" in msg:
+                    file_id=msg["photo"][-1]["file_id"]
+                    u["buffer"].append({"file_id":file_id,"type":"photo"})
+                    save_data(data)
+                    return
+                if "video" in msg:
+                    file_id=msg["video"]["file_id"]
+                    u["buffer"].append({"file_id":file_id,"type":"video"})
+                    save_data(data)
+                    return
+                if "document" in msg:
+                    file_id=msg["document"]["file_id"]
+                    u["buffer"].append({"file_id":file_id,"type":"document"})
+                    save_data(data)
+                    return
+                if "audio" in msg:
+                    file_id=msg["audio"]["file_id"]
+                    u["buffer"].append({"file_id":file_id,"type":"audio"})
+                    save_data(data)
+                    return
+                if text and text.strip()=="00":
+                    u["mode"]="awaiting_filename"
+                    save_data(data)
+                    send_message(chat_id,"اسم فایل رو بگو تا ذخیره کنم.")
+                    return
+                return
+            if text and text.strip()=="پنل":
+                send_message(chat_id,"پنل:",reply_markup=build_panel_markup())
+                return
+            if text:
+                wanted=text.strip()
+                found_key=None
+                for k,v in u["files"].items():
+                    if v.get("name")==wanted:
+                        found_key=k
+                        break
+                if found_key:
+                    items=u["files"][found_key]["items"]
+                    if not items:
+                        send_message(chat_id,"فایل خالی است.")
+                        return
+                    markup=build_nav_markup(found_key,0,len(items))
+                    send_media(chat_id,items[0],reply_markup=markup)
+                    return
+            return
+        if "callback_query" in update:
+            cq=update["callback_query"]
+            user=cq.get("from") or {}
+            user_id=user.get("id")
+            if user_id is None:
+                return
+            u=ensure_user(data,user_id)
+            if not u.get("activated"):
+                return
+            data_payload=cq.get("data") or ""
+            chat_id=cq["message"]["chat"]["id"]
+            message_id=cq["message"]["message_id"]
+            if data_payload=="panel_register":
+                u["mode"]="collecting"
+                u["buffer"]=[]
+                save_data(data)
+                answer_callback(cq["id"])
+                send_message(chat_id,"بفرست..")
+                return
+            if data_payload=="panel_list":
+                answer_callback(cq["id"])
+                files=u.get("files",{})
+                if not files:
+                    send_message(chat_id,"هیچ فایلی ذخیره نشده.")
+                    return
+                txt="فایل‌های شما:\n"
+                for k,v in files.items():
+                    txt+=f"- {v.get('name')}\n"
+                send_message(chat_id,txt)
+                return
+            if data_payload=="panel_delete":
+                u["mode"]="awaiting_delete"
+                save_data(data)
+                answer_callback(cq["id"])
+                send_message(chat_id,"اسم فایلی که میخوای حذف شه چیه؟")
+                return
+            if data_payload.startswith("view|"):
+                answer_callback(cq["id"])
+                try:
+                    parts=data_payload.split("|")
+                    if len(parts)!=3:
+                        return
+                    file_key=parts[1]
+                    idx=int(parts[2])
+                    if file_key not in u.get("files",{}):
+                        send_message(chat_id,"فایل پیدا نشد.")
+                        return
+                    items=u["files"][file_key]["items"]
+                    idx=max(0,min(idx,len(items)-1))
+                    item=items[idx]
+                    markup=build_nav_markup(file_key,idx,len(items))
+                    edit_message_media(chat_id,message_id,item,reply_markup=markup)
+                except Exception:
+                    logging.error("view error")
+                    traceback.print_exc()
+                return
+    except Exception:
+        logging.error("handle_update error")
+        traceback.print_exc()
+
+app = Flask(__name__)
+
+@app.route("/health")
+def health():
+    return "OK"
+
+def keep_alive_loop():
+    while True:
         try:
-            await context.bot.send_message(
-                chat_id=user_id,
-                text="شما از کانال اسپانسر لفت دادی، لطفا برای استفاده از ربات، مجددا عضو کانال شوید."
-            )
+            for t in [2,4,6,9,11,13]:
+                time.sleep(t*60)
+                requests.get("http://localhost:5000/health")
         except:
-            pass  # اگر کاربر ربات رو بلاک کرده باشد
+            time.sleep(30)
 
-# هندلر پیام‌های متنی
-async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if "reply_to" in context.user_data:
-        # در حالت پاسخ دادن
-        reply_to_id = context.user_data["reply_to"]
-        message_text = update.message.text
-        
-        # ارسال پیام پاسخ
+def main_loop():
+    data=load_data()
+    offset=None
+    while True:
         try:
-            await context.bot.send_message(
-                chat_id=reply_to_id,
-                text=f"پاسخ از {update.effective_user.last_name}:\n{message_text}"
-            )
-            await update.message.reply_text("پاسخ با موفقیت ارسال شد!")
-            context.user_data.pop("reply_to")
-        except Exception as e:
-            await update.message.reply_text("متاسفانه نمی‌تونم پاسخ رو ارسال کنم.")
+            params={"timeout":POLL_TIMEOUT}
+            if offset:
+                params["offset"]=offset
+            r=requests.get(f"{API_URL}/getUpdates",params=params,timeout=POLL_TIMEOUT+10)
+            res=r.json()
+            if not res.get("ok"):
+                logging.error("getUpdates error: %s",res)
+                time.sleep(1)
+                continue
+            updates=res.get("result",[])
+            for up in updates:
+                offset=up["update_id"]+1
+                handle_update(up,data)
+            save_data(data)
+        except Exception:
+            logging.error("main loop error")
+            traceback.print_exc()
+            time.sleep(1)
 
-def main():
-    application = Application.builder().token(TOKEN).build()
-    
-    # اضافه کردن هندلرها
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(help_menu, pattern="help"))
-    application.add_handler(CallbackQueryHandler(button_handler))
-    application.add_handler(InlineQueryHandler(inline_query))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
-    application.add_handler(MessageHandler(filters.StatusUpdate.CHAT_MEMBER, channel_member_handler))
-    
-    # شروع ربات
-    application.run_polling()
-
-if __name__ == '__main__':
-    main()
+if __name__=="__main__":
+    Thread(target=lambda: app.run(host="0.0.0.0",port=5000)).start()
+    Thread(target=keep_alive_loop).start()
+    main_loop()
